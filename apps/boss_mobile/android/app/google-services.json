@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "824353133931",
+    "project_id": "standard-albapay",
+    "storage_bucket": "standard-albapay.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:824353133931:android:1b90b72ea7cb95c701e82e",
+        "android_client_info": {
+          "package_name": "com.standard.albapay"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "824353133931-t6jd5iugoe2r5hi5pdnkoq6e61jurj8k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB05c63RS0aK1leBr8ReQrLf84K4iCx4tA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "824353133931-t6jd5iugoe2r5hi5pdnkoq6e61jurj8k.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

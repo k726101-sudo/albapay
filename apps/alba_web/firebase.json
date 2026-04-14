@@ -1,0 +1,62 @@
+{
+  "flutter": {
+    "platforms": {
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "standard-albapay",
+          "configurations": {
+            "web": "1:824353133931:web:815dc990e139d92101e82e"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "public": "build/web",
+    "predeploy": [
+      "flutter pub get",
+      "flutter build web --no-tree-shake-icons",
+      "mkdir -p build/web/.well-known",
+      "cp web/.well-known/assetlinks.json build/web/.well-known/assetlinks.json"
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/flutter_bootstrap.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/flutter.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
+  }
+}

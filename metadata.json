@@ -1,0 +1,5 @@
+{
+  "name": "PB Manager",
+  "description": "Store management application for employee scheduling, contracts, and payroll calculation.",
+  "requestFramePermissions": []
+}

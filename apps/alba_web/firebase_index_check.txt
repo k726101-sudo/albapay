@@ -1,0 +1,2 @@
+Queries requiring indexes:
+1. attendance: storeId(ASC) + staffId(ASC) + clockIn(DESC)

@@ -1,0 +1,14 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.standard.albapay",
+      "sha256_cert_fingerprints": [
+        "24:24:11:9D:64:F7:9D:D9:43:5F:81:C1:8A:65:D4:AD:BF:1A:18:10:01:2F:D3:B6:5E:CD:C9:1B:DF:2C:E1:7E",
+        "11:5C:09:65:61:AA:38:59:BB:D6:5A:4B:69:5A:2B:9E:75:38:77:7E:1B:21:E4:B3:27:6C:A9:6A:C7:2D:71:4A"
+      ]
+    }
+  }
+]
+

@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.get('admin', false) == true;
+    }
+
+    // 내 직원 번호 (users 문서에서 확인)
+    function userWorkerId() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('workerId', '') 
+        : '';
+    }
+
+    // 특정 매장의 멤버(사장님 또는 직원)인지를 확인
+    function isStoreMember(storeId) {
+      return isSignedIn() && (
+        isAdmin() || 
+        // 0) 체험 모드 매장인 경우 (즉시 통과하여 전파 지연으로 인한 Permission Denied 방지)
+        (storeId == 'demo_' + request.auth.uid) ||
+        // 1) 유저 문서에 해당 storeId가 등록된 경우 (직원/관리자)
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('storeId', '') == storeId) ||
+        // 2) 매장 문서의 소유자(ownerId)인 경우 (사장님)
+        (exists(/databases/$(database)/documents/stores/$(storeId)) && 
+         get(/databases/$(database)/documents/stores/$(storeId)).data.get('ownerId', '') == request.auth.uid)
+      );
+    }
+
+    // --- 1. 유저 정보 (Top-level) ---
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && (uid() == userId || isAdmin());
+    }
+
+    // --- 2. 매장 정보 및 하위 컬렉션 ---
+    match /stores/{storeId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (request.resource.data.get('ownerId', '') == uid() || isAdmin());
+      allow update, delete: if isStoreMember(storeId);
+
+      // 직원 목록 (workers)
+      match /workers/{workerId} {
+        allow read: if isSignedIn();
+        // 알바생이 본인의 uid를 등록할 수 있게 허용
+        allow update: if isStoreMember(storeId) || (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid']));
+        allow create, delete: if isStoreMember(storeId);
+      }
+
+      // 노무 서류 (documents) - 알바생 서명 및 사장님 대면 서명/교부 허용
+      match /documents/{docId} {
+        allow read: if isSignedIn() && (isAdmin() || isStoreMember(storeId) || resource.data.get('staffId', '') == userWorkerId());
+        // 사장님(isStoreMember) 또는 알바생 본인이 서명 가능
+        allow update: if isSignedIn() && (isAdmin() || isStoreMember(storeId) || resource.data.get('staffId', '') == userWorkerId());
+        allow create, delete: if isStoreMember(storeId);
+      }
+
+      // 기타 하위 (notices, expirations, todos 등)
+      match /{allIndices=**} {
+        allow read: if isSignedIn() && (isAdmin() || isStoreMember(storeId));
+        allow write: if isStoreMember(storeId);
+      }
+    }
+
+    // --- 3. 출퇴근 기록 (Top-level) ---
+    match /attendance/{attendanceId} {
+      allow read: if isSignedIn() && (isAdmin() || resource.data.get('staffId', '') == userWorkerId() || isStoreMember(resource.data.get('storeId', '')));
+      allow create: if isSignedIn() && (isAdmin() || request.resource.data.get('staffId', '') == userWorkerId() || isStoreMember(request.resource.data.get('storeId', '')));
+      allow update: if isSignedIn() && (isAdmin() || resource.data.get('staffId', '') == userWorkerId() || isStoreMember(resource.data.get('storeId', '')));
+    }
+
+    // --- 4. 근무표/대타/교육 (Top-level) ---
+    match /shifts/{docId} {
+      allow read: if isSignedIn() && (isAdmin() || resource.data.get('staffId', '') == userWorkerId() || isStoreMember(resource.data.get('storeId', '')));
+      allow write: if isSignedIn() && (isAdmin() || isStoreMember(request.resource.data.get('storeId', '')) || (resource != null && isStoreMember(resource.data.get('storeId', ''))));
+    }
+    match /substitutions/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /educationRecords/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // --- 5. 초대 및 통계 ---
+    match /invites/{inviteId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    match /stats/{docId} {
+      allow read: if isSignedIn();
+    }
+
+    // --- 6. 푸시 알림 큐 ---
+    match /notificationQueue/{docId} {
+      allow write: if isSignedIn();
+    }
+  }
+}
