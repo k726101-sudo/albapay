@@ -35,29 +35,23 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
 
     try {
       final now = AppClock.now();
+      debugPrint('[StandingAlert] ▶ 시작 (storeId=${widget.storeId})');
 
       final storeSnap = await FirebaseFirestore.instance
           .collection('stores')
           .doc(widget.storeId)
           .get();
 
-      if (!storeSnap.exists) return;
+      if (!storeSnap.exists) { debugPrint('[StandingAlert] ✕ store 없음'); return; }
       final storeData = storeSnap.data() ?? {};
 
-      final settlementStartDay =
-          (storeData['settlementStartDay'] as num?)?.toInt() ?? 1;
-      final settlementEndDay =
-          (storeData['settlementEndDay'] as num?)?.toInt() ?? 31;
-
-      final period = computeSettlementPeriod(
-        now: now,
-        settlementStartDay: settlementStartDay,
-        settlementEndDay: settlementEndDay,
-      );
+      // ── Rolling 30일: 근로기준법 시행령 제7조의2 (산정 사유 발생일 전 1개월) ──
+      final rollingEnd = DateTime(now.year, now.month, now.day);
+      final rollingStart = rollingEnd.subtract(const Duration(days: 30));
 
       final periodKey =
-          '${period.start.year}-${period.start.month.toString().padLeft(2, '0')}-${period.start.day.toString().padLeft(2, '0')}~'
-          '${period.end.year}-${period.end.month.toString().padLeft(2, '0')}-${period.end.day.toString().padLeft(2, '0')}';
+          '${rollingStart.year}-${rollingStart.month.toString().padLeft(2, '0')}-${rollingStart.day.toString().padLeft(2, '0')}~'
+          '${rollingEnd.year}-${rollingEnd.month.toString().padLeft(2, '0')}-${rollingEnd.day.toString().padLeft(2, '0')}';
 
       // Firebase 인덱스 미비로 인한 크래시를 방지하기 위해 storeId로만 쿼리하고 로컬에서 날짜를 필터링
       final attendanceSnap = await FirebaseFirestore.instance
@@ -65,13 +59,15 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
           .where('storeId', isEqualTo: widget.storeId)
           .get();
 
-      final limitEnd = period.end.add(const Duration(days: 1)).toIso8601String();
+      final limitEnd = rollingEnd.add(const Duration(days: 1));
       final attendances = attendanceSnap.docs
           .map((d) {
             final clockInStr = d.data()['clockIn']?.toString() ?? '';
-            // 로컬 필터링 (ISO 8601 문자열 비교)
-            if (clockInStr.compareTo(period.start.toIso8601String()) >= 0 &&
-                clockInStr.compareTo(limitEnd) < 0) {
+            final clockInDate = DateTime.tryParse(clockInStr);
+            
+            if (clockInDate != null && 
+                !clockInDate.isBefore(rollingStart) && 
+                clockInDate.isBefore(limitEnd)) {
               return Attendance.fromJson(d.data(), id: d.id);
             }
             return null;
@@ -79,119 +75,25 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
           .whereType<Attendance>()
           .toList();
 
-      final staffList = WorkerService.getAll();
+      final staffList = WorkerService.getAll()
+          .where((w) => w.workerType != 'dispatch')
+          .toList();
 
       final standing = calculateStandingFromAttendances(
         attendances: attendances,
-        periodStart: period.start,
-        periodEnd: period.end,
+        periodStart: rollingStart,
+        periodEnd: rollingEnd,
         staffList: staffList,
       );
+
+      debugPrint('[StandingAlert] 계산: 평균=${standing.average.toStringAsFixed(2)}, '
+          '가동일=${standing.operatingDays}, 5인↑=${standing.daysWithFiveOrMore}, '
+          'att=${attendances.length}건, staff=${staffList.length}명');
 
       final currentIsFive = standing.isFiveOrMore;
       final currentIsTen = standing.isTenOrMore;
 
-      final metaRef = FirebaseFirestore.instance
-          .collection('stores')
-          .doc(widget.storeId)
-          .collection('standingMeta')
-          .doc('current');
-
-      final metaSnap = await metaRef.get();
-      final metaData = metaSnap.data() ?? {};
-
-      final lastPeriodKey = metaData['periodKey'];
-      final lastIsFive = metaData['isFiveLast'];
-      final lastIsTen = metaData['isTenLast'];
-
-      final hasLast = lastPeriodKey is String && lastIsFive is bool;
-      final hasTenLast = lastIsTen is bool;
-
-      final periodChanged = !hasLast || lastPeriodKey != periodKey;
-      final stateChanged = !hasLast || (lastIsFive != currentIsFive);
-
-      // Show alarm only when the state flips, but requested:
-      // "5인이하였다가 이상으로 바뀔 경우" -> true alarm.
-      final shouldAlarmUnderToOver =
-          hasLast && lastIsFive == false && currentIsFive == true;
-      final shouldAlarmOverToUnder =
-          hasLast && lastIsFive == true && currentIsFive == false;
-      final shouldAlarmTenFlipToOver =
-          hasTenLast && lastIsTen == false && currentIsTen == true;
-      final shouldAlarmTenFlipToUnder =
-          hasTenLast && lastIsTen == true && currentIsTen == false;
-
-      // ── 월급제 직원 중 고정연장수당이 있는 직원 수 (근로계약서 재작성 대상) ──
-      final monthlyWorkersAffected = staffList.where((w) =>
-          w.status == 'active' &&
-          w.wageType == 'monthly' &&
-          w.fixedOvertimePay > 0).length;
-
-      if (!metaSnap.exists) {
-        // First-time for this device/session: show guidance once.
-        _showSnack(
-          message: currentIsFive
-              ? '근무기록·계약정보 기준 추정 상시근로자 수: 5인 이상\n사업장 운영 형태에 따라 가산수당 적용 여부를 확인하시기 바랍니다. (참고용)'
-              : '근무기록·계약정보 기준 추정 상시근로자 수: 5인 미만\n출근기록 누락이 없도록 확인해 주세요. (참고용)',
-        );
-      } else if (shouldAlarmUnderToOver || shouldAlarmOverToUnder) {
-        _showSnack(
-          message: currentIsFive
-              ? '안내: 추정 상시근로자 수가 5인 이상으로 변동되었습니다.\n사업장 운영 형태에 따라 가산수당(연장/야간/휴일) 적용 여부를 확인해 주세요. (참고용)'
-              : '안내: 추정 상시근로자 수가 5인 미만으로 변동되었습니다.\n출근기록 정확성 확인을 권장합니다. (참고용)',
-        );
-
-        // ★ 5인 전환 발생 + 월급제 직원이 있으면 대시보드 배너 활성화
-        if (monthlyWorkersAffected > 0 && mounted) {
-          setState(() {
-            _alertType = shouldAlarmUnderToOver
-                ? _StandingAlertType.underToOver
-                : _StandingAlertType.overToUnder;
-            _affectedMonthlyCount = monthlyWorkersAffected;
-            _dismissed = false;
-          });
-        }
-      } else if (periodChanged && stateChanged) {
-        // New period, but no flip due to existing meta mismatch.
-        // Keep quiet for MVP to reduce noise.
-      }
-
-      if (standing.average >= 9.5 && standing.average < 10.0) {
-        _showSnack(
-          message:
-              '사장님, 현재 상시근로자 수가 ${standing.average.toStringAsFixed(1)}명입니다. '
-              '10인이 되는 순간 \'취업규칙 신고 의무\'가 발생하니 노무사 상담이나 서류 준비를 시작하세요.',
-        );
-      }
-
-      if (!metaSnap.exists && currentIsTen) {
-        await _showTenOrMoreChecklistDialog();
-      } else if (shouldAlarmTenFlipToOver) {
-        _showSnack(
-          message: '주의: 상시근로자 10인 이상으로 바뀌었습니다. 취업규칙 신고 의무를 확인하세요.',
-        );
-        await _showTenOrMoreChecklistDialog();
-      } else if (shouldAlarmTenFlipToUnder) {
-        _showSnack(
-          message: '안내: 상시근로자 10인 미만으로 내려왔습니다. 최근 신고/변경 이력을 점검해 주세요.',
-        );
-      }
-
-      await metaRef.set(
-        {
-          'periodKey': periodKey,
-          'isFiveLast': currentIsFive,
-          'isTenLast': currentIsTen,
-          'average': standing.average,
-          'daysWithFiveOrMore': standing.daysWithFiveOrMore,
-          'daysWithTenOrMore': standing.daysWithTenOrMore,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
-
-      // Keep store.isFiveOrMore in sync with the current computed standing
-      // ONLY when not in a manual override mode.
+      // ── 1. 핵심: store 문서 업데이트 (대시보드 표시값) ──
       final sizeMode = storeData['employeeSizeMode']?.toString() ?? 'auto';
       final Map<String, dynamic> storeUpdate = {
         'isTenOrMore': currentIsTen,
@@ -207,6 +109,113 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
           .collection('stores')
           .doc(widget.storeId)
           .set(storeUpdate, SetOptions(merge: true));
+
+      debugPrint('[StandingAlert] ✅ store 갱신 완료: '
+          '평균=${standing.average.toStringAsFixed(2)}, 5인↑=${standing.daysWithFiveOrMore}/${standing.operatingDays}일');
+
+      // ── 2. 변동 알림용 standingMeta (실패해도 핵심 기능에 영향 없음) ──
+      try {
+        final metaRef = FirebaseFirestore.instance
+            .collection('stores')
+            .doc(widget.storeId)
+            .collection('standingMeta')
+            .doc('current');
+
+        final metaSnap = await metaRef.get();
+        final metaData = metaSnap.data() ?? {};
+
+        final lastPeriodKey = metaData['periodKey'];
+        final lastIsFive = metaData['isFiveLast'];
+        final lastIsTen = metaData['isTenLast'];
+
+        final hasLast = lastPeriodKey is String && lastIsFive is bool;
+        final hasTenLast = lastIsTen is bool;
+
+        final periodChanged = !hasLast || lastPeriodKey != periodKey;
+        final stateChanged = !hasLast || (lastIsFive != currentIsFive);
+
+        final shouldAlarmUnderToOver =
+            hasLast && lastIsFive == false && currentIsFive == true;
+        final shouldAlarmOverToUnder =
+            hasLast && lastIsFive == true && currentIsFive == false;
+        final shouldAlarmTenFlipToOver =
+            hasTenLast && lastIsTen == false && currentIsTen == true;
+        final shouldAlarmTenFlipToUnder =
+            hasTenLast && lastIsTen == true && currentIsTen == false;
+
+        // ── 월급제 직원 중 고정연장수당이 있는 직원 수 (근로계약서 재작성 대상) ──
+        final monthlyWorkersAffected = staffList.where((w) =>
+            w.status == 'active' &&
+            w.wageType == 'monthly' &&
+            w.fixedOvertimePay > 0).length;
+
+        if (!metaSnap.exists) {
+          _showSnack(
+            message: currentIsFive
+                ? '근무기록·계약정보 기준 추정 상시근로자 수: 5인 이상\n사업장 운영 형태에 따라 가산수당 적용 여부를 확인하시기 바랍니다. (참고용)'
+                : '근무기록·계약정보 기준 추정 상시근로자 수: 5인 미만\n출근기록 누락이 없도록 확인해 주세요. (참고용)',
+          );
+        } else if (shouldAlarmUnderToOver || shouldAlarmOverToUnder) {
+          _showSnack(
+            message: currentIsFive
+                ? '안내: 추정 상시근로자 수가 5인 이상으로 변동되었습니다.\n사업장 운영 형태에 따라 가산수당(연장/야간/휴일) 적용 여부를 확인해 주세요. (참고용)'
+                : '안내: 추정 상시근로자 수가 5인 미만으로 변동되었습니다.\n출근기록 정확성 확인을 권장합니다. (참고용)',
+          );
+
+          if (monthlyWorkersAffected > 0 && mounted) {
+            setState(() {
+              _alertType = shouldAlarmUnderToOver
+                  ? _StandingAlertType.underToOver
+                  : _StandingAlertType.overToUnder;
+              _affectedMonthlyCount = monthlyWorkersAffected;
+              _dismissed = false;
+            });
+          }
+        } else if (periodChanged && stateChanged) {
+          // New period, but no flip due to existing meta mismatch.
+        }
+
+        if (standing.average >= 9.5 && standing.average < 10.0) {
+          _showSnack(
+            message:
+                '사장님, 현재 상시근로자 수가 ${standing.average.toStringAsFixed(1)}명입니다. '
+                '10인이 되는 순간 \'취업규칙 신고 의무\'가 발생하니 노무사 상담이나 서류 준비를 시작하세요.',
+          );
+        }
+
+        if (!metaSnap.exists && currentIsTen) {
+          await _showTenOrMoreChecklistDialog();
+        } else if (shouldAlarmTenFlipToOver) {
+          _showSnack(
+            message: '주의: 상시근로자 10인 이상으로 바뀌었습니다. 취업규칙 신고 의무를 확인하세요.',
+          );
+          await _showTenOrMoreChecklistDialog();
+        } else if (shouldAlarmTenFlipToUnder) {
+          _showSnack(
+            message: '안내: 상시근로자 10인 미만으로 내려왔습니다. 최근 신고/변경 이력을 점검해 주세요.',
+          );
+        }
+
+        await metaRef.set(
+          {
+            'periodKey': periodKey,
+            'isFiveLast': currentIsFive,
+            'isTenLast': currentIsTen,
+            'average': standing.average,
+            'daysWithFiveOrMore': standing.daysWithFiveOrMore,
+            'daysWithTenOrMore': standing.daysWithTenOrMore,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+        debugPrint('[StandingAlert] ✅ standingMeta 갱신 완료');
+      } catch (metaErr) {
+        // standingMeta 접근 실패해도 대시보드 핵심 기능에는 영향 없음
+        debugPrint('[StandingAlert] ⚠️ standingMeta 접근 실패 (대시보드 갱신은 정상): $metaErr');
+      }
+    } catch (e, st) {
+      debugPrint('[StandingAlert] ❌ 에러: $e');
+      debugPrint('[StandingAlert] 스택: $st');
     } finally {
       _running = false;
     }

@@ -244,10 +244,18 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                       return inOk || outOk;
                     }).toList();
 
+                    // ── 상시근로자 산정: Rolling 30일 (시행령 제7조의2) ──
+                    final rollingEnd = DateTime(now.year, now.month, now.day);
+                    final rollingStart = rollingEnd.subtract(const Duration(days: 30));
+                    final rollingAttendance = allAttendance.where((att) {
+                      final inDay = _dayKey(att.clockIn);
+                      return !inDay.isBefore(rollingStart) && !inDay.isAfter(rollingEnd);
+                    }).toList();
+
                     final standing = _calculateStandingFromAttendances(
-                      periodAttendance,
-                      period.start,
-                      period.end,
+                      rollingAttendance,
+                      rollingStart,
+                      rollingEnd,
                       staffList,
                     );
 
@@ -1358,19 +1366,19 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     final totalDays = periodEnd.difference(periodStart).inDays + 1;
     final dailyStaff = <DateTime, Set<String>>{};
 
-    // 1. 실제 출퇴근 기록 반영
+    // 현재 등록된 직원 ID 집합 (삭제된 직원의 고아 기록 필터링용)
+    final activeStaffIds = staffList.map((s) => s.id).toSet();
+
+    // 1. 실제 출퇴근 기록 반영 (clockIn 날짜만 기준)
     for (final att in attendances) {
+      // 삭제된 직원의 attendance 기록은 카운트에서 제외
+      if (!activeStaffIds.contains(att.staffId)) continue;
+
       final day = _dayKey(att.clockIn);
       if (!day.isBefore(periodStart) && !day.isAfter(periodEnd)) {
         dailyStaff.putIfAbsent(day, () => <String>{}).add(att.staffId);
       }
-
-      if (att.clockOut != null) {
-        final outDay = _dayKey(att.clockOut!);
-        if (!outDay.isBefore(periodStart) && !outDay.isAfter(periodEnd)) {
-          dailyStaff.putIfAbsent(outDay, () => <String>{}).add(att.staffId);
-        }
-      }
+      // clockOut 날짜는 카운트하지 않음 (다음날 새벽 퇴근 시 인원수 부풀림 방지)
     }
 
     // 2. 가상직원 시뮬레이션 반영 (테스트 편의용)
@@ -1387,19 +1395,42 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
         }
     }
 
+    // ── 진단용: staffId → 이름 매핑 ──
+    final staffNameMap = <String, String>{};
+    for (final s in staffList) {
+      staffNameMap[s.id] = s.name;
+    }
+
     int totalPersonDays = 0;
     int daysWithFiveOrMore = 0;
     int operatingDays = 0; // New: days with at least one person
 
+    debugPrint('═══════════════════════════════════════════');
+    debugPrint('📊 상시근로자 일별 상세 (${periodStart.toString().substring(0,10)} ~ ${periodEnd.toString().substring(0,10)})');
+    debugPrint('── activeStaffIds: ${activeStaffIds.length}명 (파견 제외)');
+    debugPrint('═══════════════════════════════════════════');
+
     for (int i = 0; i < totalDays; i++) {
         final day = DateTime(periodStart.year, periodStart.month, periodStart.day + i);
-        final count = dailyStaff[day]?.length ?? 0;
+        final staffIds = dailyStaff[day];
+        final count = staffIds?.length ?? 0;
         if (count > 0) {
             operatingDays++;
             totalPersonDays += count;
             if (count >= 5) daysWithFiveOrMore++;
+
+            final names = staffIds!.map((id) => staffNameMap[id] ?? id).toList()..sort();
+            final marker = count >= 5 ? '⚠️ 5인↑' : '    ';
+            final dayStr = '${day.month}/${day.day}';
+            final weekdays = ['월','화','수','목','금','토','일'];
+            final wd = weekdays[(day.weekday - 1) % 7];
+            debugPrint('$marker $dayStr($wd) ${count}명: ${names.join(", ")}');
         }
     }
+
+    debugPrint('───────────────────────────────────────────');
+    debugPrint('📊 합계: 가동일 $operatingDays일, 연인원 $totalPersonDays명, 5인↑ $daysWithFiveOrMore일');
+    debugPrint('═══════════════════════════════════════════');
 
     final average = operatingDays == 0 ? 0.0 : (totalPersonDays / operatingDays);
     final halfDays = operatingDays / 2.0;

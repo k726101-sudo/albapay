@@ -374,25 +374,8 @@ class _MainScreenState extends State<MainScreen> {
               _pageController.animateToPage(0, duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
             }
           });
-          return false;
         }
-
-        final now = DateTime.now();
-        if (_backPressedTime == null || now.difference(_backPressedTime!) > const Duration(seconds: 2)) {
-          _backPressedTime = now;
-          if (mounted) {
-            ScaffoldMessenger.of(context).clearSnackBars();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('뒤로 가기 버튼을 한 번 더 누르면 앱이 종료됩니다.'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-          return false;
-        }
-        
-        return true;
+        return false;
       },
       child: Scaffold(
         backgroundColor: MainScreen.kBodyBg,
@@ -3106,7 +3089,9 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _checkStandingFlipRiskAfterScheduleChange() async {
-    final workers = WorkerService.getAll();
+    final workers = WorkerService.getAll()
+        .where((w) => w.workerType != 'dispatch')
+        .toList();
     if (workers.isEmpty) return;
 
     final storeId = workers

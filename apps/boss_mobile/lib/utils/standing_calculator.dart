@@ -98,39 +98,22 @@ StandingResult calculateStandingFromAttendances({
   bool inRange(DateTime day) =>
       !day.isBefore(periodStart) && !day.isAfter(periodEnd);
 
-  // ── 1. 실제 출퇴근 기록 반영 (1차 기준) ──
+  // ── 현재 등록된 직원 ID 집합 (삭제된 직원의 고아 기록 필터링용) ──
+  final activeStaffIds = staffList.map((s) => s.id).toSet();
+
+  // ── 1. 실제 출퇴근 기록 반영 (clockIn 날짜만 기준) ──
   for (final att in attendances) {
+    // 삭제된 직원의 attendance 기록은 카운트에서 제외
+    if (!activeStaffIds.contains(att.staffId)) continue;
+
     final inDay = dayKey(att.clockIn);
     if (inRange(inDay)) {
       dailyStaff.putIfAbsent(inDay, () => <String>{}).add(att.staffId);
     }
-
-    if (att.clockOut != null) {
-      final outDay = dayKey(att.clockOut!);
-      if (inRange(outDay)) {
-        dailyStaff.putIfAbsent(outDay, () => <String>{}).add(att.staffId);
-      }
-    }
+    // clockOut 날짜는 카운트하지 않음 (다음날 새벽 퇴근 시 인원수 부풀림 방지)
   }
 
-  // ── 2. 계약 기반 보조 반영 (2차 보조: 출퇴근 누락 방지) ──
-  // 조건: active 상태 + 해당 요일이 근무요일 + 최근 30일 내 출퇴근 기록 ≥ 1건
-  // 제외: 퇴직자(inactive), 파견직(dispatch)
-  final recentCutoff = periodEnd.subtract(const Duration(days: 30));
-  final staffRecentActivity = <String, bool>{};
-
-  for (final staff in staffList) {
-    if (staff.status == 'inactive') continue;
-    if (staff.workerType == 'dispatch') continue;
-
-    // 최근 30일 내 활동 여부 캐싱
-    if (!staffRecentActivity.containsKey(staff.id)) {
-      staffRecentActivity[staff.id] = attendances.any((a) =>
-          a.staffId == staff.id &&
-          !a.clockIn.isBefore(recentCutoff));
-    }
-  }
-
+  // ── 2. 가상직원 시뮬레이션 반영 (테스트 편의용) ──
   for (int i = 0; i < totalDays; i++) {
     final day = DateTime(periodStart.year, periodStart.month, periodStart.day + i);
     final weekday = day.weekday % 7; // 0=Sun, ..., 6=Sat (matched Worker.workDays)
@@ -139,21 +122,10 @@ StandingResult calculateStandingFromAttendances({
       if (staff.status == 'inactive') continue;
       if (staff.workerType == 'dispatch') continue;
 
-      // 가상직원: 기존 로직 유지 (테스트 시뮬레이션용)
       if (staff.name.contains('가상')) {
         if (staff.workDays.contains(weekday)) {
           dailyStaff.putIfAbsent(day, () => <String>{}).add(staff.id);
         }
-        continue;
-      }
-
-      // 실제 직원: 해당 날짜에 이미 attendance로 집계되었으면 스킵
-      if (dailyStaff[day]?.contains(staff.id) ?? false) continue;
-
-      // 계약 근무요일 일치 + 최근 30일 활동 존재 → 인원 추가
-      if (staff.workDays.contains(weekday) &&
-          (staffRecentActivity[staff.id] ?? false)) {
-        dailyStaff.putIfAbsent(day, () => <String>{}).add(staff.id);
       }
     }
   }

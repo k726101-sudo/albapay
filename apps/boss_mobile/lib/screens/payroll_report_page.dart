@@ -271,6 +271,8 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                       backgroundColor: const Color(0xFFF2F2F7),
                       appBar: AppBar(
                         backgroundColor: const Color(0xFF1a1a2e),
+                        foregroundColor: Colors.white,
+                        iconTheme: const IconThemeData(color: Colors.white),
                         title: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -514,6 +516,37 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Text('퇴사 정산 (정산 종료일: ${DateFormat('yyyy-MM-dd').format(periodEnd)})', style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.bold)),
                     ),
+                  Builder(builder: (context) {
+                    if (workerData.isProbation && workerData.probationMonths > 0) {
+                      final join = workerData.joinDate;
+                      final probationEndDate = DateTime(join.year, join.month + workerData.probationMonths, join.day);
+                      if (probationEndDate.isAfter(periodStart)) {
+                        return Container(
+                          margin: const EdgeInsets.only(top: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.orange.shade800, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '수습기간 적용 중 (기본급 10% 감액)\n수습 종료 예정일: ${DateFormat('yyyy-MM-dd').format(probationEndDate)}',
+                                  style: TextStyle(color: Colors.orange.shade900, fontSize: 13, height: 1.4, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    }
+                    return const SizedBox.shrink();
+                  }),
                   const SizedBox(height: 24),
                   
                   _detailRow('누적 확정 급여 (세전)', '${summary.totalPay.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원', isBold: true),
@@ -595,10 +628,23 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                       // 시급 분리 표시 (임금변경합의서 반영)
                       final breakdown = summary.basePayBreakdownByWage;
                       String basePaySubtext;
+                      bool isProbationApplied = workerData.isProbation && workerData.probationMonths > 0 && summary.pureLaborHours > 0 && summary.basePay < summary.pureLaborHours * hw;
                       if (breakdown.length > 1) {
-                        basePaySubtext = breakdown.entries.map((e) => '${_fH(e.value)}시간 × ${_fW(e.key)}원').join(' + ');
+                        double originalBasePay = 0;
+                        basePaySubtext = breakdown.entries.map((e) {
+                          originalBasePay += e.value * e.key;
+                          return '${_fH(e.value)}시간 × ${_fW(e.key)}원';
+                        }).join(' + ');
+                        if (isProbationApplied) {
+                           basePaySubtext += ' = ${_fW(originalBasePay)}원\n수습 감액 (-${_fW(originalBasePay - summary.basePay)}원)';
+                        }
                       } else {
-                        basePaySubtext = '${_fH(summary.pureLaborHours)}시간 × ${_fW(hw)}원';
+                        double originalBasePay = summary.pureLaborHours * hw;
+                        if (isProbationApplied) {
+                           basePaySubtext = '${_fH(summary.pureLaborHours)}시간 × ${_fW(hw)}원 = ${_fW(originalBasePay)}원\n수습 감액 10% (-${_fW(originalBasePay - summary.basePay)}원)';
+                        } else {
+                           basePaySubtext = '${_fH(summary.pureLaborHours)}시간 × ${_fW(hw)}원';
+                        }
                       }
                       return Column(
                         children: [

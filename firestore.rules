@@ -221,6 +221,12 @@ service cloud.firestore {
         allow read, write: if isStoreOwner(storeId);
       }
 
+      // ── 상시근로자 변동 추적 (standingMeta) ──
+      // 5인 이상/미만 전환 알림을 위한 이전 기간 데이터 저장
+      match /standingMeta/{metaId} {
+        allow read, write: if isStoreOwner(storeId);
+      }
+
       // ── Fallback: 미정의 하위 컬렉션은 기본 거부 ──
       // 향후 추가되는 컬렉션이 자동으로 열리는 것을 방지
       // 새 컬렉션은 위에 명시적 match를 추가해야 함

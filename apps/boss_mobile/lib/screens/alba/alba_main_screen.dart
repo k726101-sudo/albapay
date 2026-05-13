@@ -1859,8 +1859,16 @@ Future<void> _loadDashboardData() async {
           return '';
         }
 
-        return Scaffold(
-          backgroundColor: _pageBg,
+        // ignore: deprecated_member_use
+        return WillPopScope(
+          onWillPop: () async {
+            if (_index != 0) {
+              setState(() => _index = 0);
+            }
+            return false;
+          },
+          child: Scaffold(
+            backgroundColor: _pageBg,
           resizeToAvoidBottomInset: false,
           appBar: _index == 0
               ? null
@@ -1965,7 +1973,8 @@ Future<void> _loadDashboardData() async {
                 ],
               ),
             ],
-          ),
-        );
+          ), // bottomNavigationBar: Column
+        ), // Scaffold
+      ); // WillPopScope
   }
 }

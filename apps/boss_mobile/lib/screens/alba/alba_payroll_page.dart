@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_logic/shared_logic.dart';
+import 'package:intl/intl.dart';
 
 class AlbaPayrollPage extends StatelessWidget {
   final String storeId;
@@ -411,15 +412,60 @@ class AlbaPayrollPage extends StatelessWidget {
                                     bool hasProbation = worker['isProbation'] == true && (worker['probationMonths'] ?? 0) > 0;
                                     double effectiveHrly = hrly;
                                     String rateText = '${_formatWon(hrly)}원';
+                                    DateTime? probationEndDate;
+                                    if (hasProbation && worker['startDate'] != null && worker['startDate'].toString().isNotEmpty) {
+                                      final join = DateTime.tryParse(worker['startDate'].toString());
+                                      if (join != null) {
+                                        probationEndDate = DateTime(join.year, join.month + (worker['probationMonths'] as int), join.day);
+                                      }
+                                    }
+
+                                    bool isProbationApplied = false;
+                                    double originalBasePay = 0;
+                                    double probationDeduction = 0;
+
                                     if (hasProbation && result.pureLaborHours > 0 && result.basePay < result.pureLaborHours * hrly) {
                                        effectiveHrly = (result.basePay / result.pureLaborHours).roundToDouble();
-                                       rateText = '${_formatWon(effectiveHrly)}원 (수습적용)';
                                        wH = effectiveHrly > 0 ? result.weeklyHolidayPay / effectiveHrly : 0;
+                                       
+                                       isProbationApplied = true;
+                                       originalBasePay = result.pureLaborHours * hrly;
+                                       probationDeduction = originalBasePay - result.basePay;
+                                    }
+
+                                    String basePaySubtitle;
+                                    if (isProbationApplied) {
+                                       basePaySubtitle = '${_fmtH(result.pureLaborHours)} × ${_formatWon(hrly)}원 = ${_formatWon(originalBasePay)}원\n수습 감액 10% (-${_formatWon(probationDeduction)}원)';
+                                    } else {
+                                       basePaySubtitle = '${_fmtH(result.pureLaborHours)} × $rateText';
                                     }
 
                                     return Column(
                                       crossAxisAlignment: CrossAxisAlignment.stretch,
                                       children: [
+                                        if (hasProbation && probationEndDate != null && probationEndDate!.isAfter(period.start))
+                                          Container(
+                                            margin: const EdgeInsets.only(bottom: 16),
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.orange.shade50,
+                                              border: Border.all(color: Colors.orange.shade200),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Icon(Icons.info_outline, color: Colors.orange.shade800, size: 20),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    '수습기간 적용 중 (기본급 10% 감액)\n수습 종료 예정일: ${DateFormat('yyyy-MM-dd').format(probationEndDate!)}',
+                                                    style: TextStyle(color: Colors.orange.shade900, fontSize: 13, height: 1.4, fontWeight: FontWeight.w600),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         if (hasProbation && minimumWage != null && effectiveHrly < minimumWage)
                                           Container(
                                             margin: const EdgeInsets.only(bottom: 16),
@@ -443,7 +489,7 @@ class AlbaPayrollPage extends StatelessWidget {
                                               ],
                                             ),
                                           ),
-                                        _payRow('기본급', result.basePay, subtitle: '${_fmtH(result.pureLaborHours)} × $rateText'),
+                                        _payRow('기본급', result.basePay, subtitle: basePaySubtitle),
                                         if (result.premiumPay > 0)
                                           _payRow('연장/야간 가산수당', result.premiumPay, color: Colors.indigo, subtitle: '${_fmtH(result.premiumHours)} × ${_formatWon(effectiveHrly * 0.5)}원'),
                                         
