@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "apps/alba_web/build/web",
+    "public": "apps/boss_mobile/build/web",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -8,8 +8,40 @@
     ],
     "rewrites": [
       {
+        "source": "/support",
+        "destination": "/support.html"
+      },
+      {
+        "source": "/download",
+        "destination": "/download.html"
+      },
+      {
+        "source": "/invite",
+        "destination": "/invite.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/**/flutter_service_worker.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
       }
     ]
   },

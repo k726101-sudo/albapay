@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'alba_resignation_screen.dart';
+
 class AlbaSettingsScreen extends StatelessWidget {
-  const AlbaSettingsScreen({super.key});
+  final String storeId;
+  final String workerId;
+
+  const AlbaSettingsScreen({
+    super.key,
+    required this.storeId,
+    required this.workerId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +67,40 @@ class AlbaSettingsScreen extends StatelessWidget {
                         Navigator.of(context).popUntil((route) => route.isFirst);
                       }
                     }
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            '알바생 메뉴',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 24),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade300),
+            ),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.assignment_return_rounded, color: Color(0xFF1A1A2E)),
+                  title: const Text('사직서 작성 및 제출', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('퇴사 시 사직서를 작성하여 제출합니다.'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AlbaResignationScreen(
+                          storeId: storeId,
+                          workerId: workerId,
+                        ),
+                      ),
+                    );
                   },
                 ),
               ],

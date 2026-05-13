@@ -1,6 +1,12 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+
+import 'package:shared_logic/shared_logic.dart';
 
 import '../widgets/store_id_gate.dart';
 
@@ -17,6 +23,9 @@ class _NoticeCreateScreenState extends State<NoticeCreateScreen> {
   bool _saving = false;
   bool _hasDueDate = false;
   DateTime _publishUntil = DateTime.now().add(const Duration(days: 7));
+  
+  XFile? _selectedImage;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void dispose() {
@@ -53,6 +62,48 @@ class _NoticeCreateScreenState extends State<NoticeCreateScreen> {
                 minLines: 6,
                 maxLines: 10,
               ),
+              const SizedBox(height: 16),
+              if (_selectedImage != null)
+                Stack(
+                  alignment: Alignment.topRight,
+                  children: [
+                    Container(
+                      height: 200,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                        image: DecorationImage(
+                          image: kIsWeb 
+                            ? NetworkImage(_selectedImage!.path) as ImageProvider
+                            : FileImage(File(_selectedImage!.path)),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.cancel, color: Colors.white, shadows: [Shadow(blurRadius: 4, color: Colors.black)]),
+                      onPressed: () => setState(() => _selectedImage = null),
+                    )
+                  ],
+                )
+              else
+                SizedBox(
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () async {
+                      final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+                      if (picked != null) {
+                        setState(() => _selectedImage = picked);
+                      }
+                    },
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    label: const Text('첨부 이미지 선택'),
+                  ),
+                ),
               const SizedBox(height: 16),
               StatefulBuilder(
                 builder: (context, setFieldState) {
@@ -116,6 +167,18 @@ class _NoticeCreateScreenState extends State<NoticeCreateScreen> {
                           setState(() => _saving = true);
                           try {
                             final id = const Uuid().v4();
+                            String? imageUrl;
+
+                            if (_selectedImage != null) {
+                              final r2DocId = await R2StorageService.instance.secureUpload(
+                                storeId: storeId,
+                                docType: 'notices',
+                                file: File(_selectedImage!.path),
+                                mimeType: 'image/jpeg',
+                              );
+                              imageUrl = r2DocId; // Save the document ID instead of a public URL
+                            }
+
                             final data = <String, dynamic>{
                               'id': id,
                               'title': title,
@@ -123,6 +186,10 @@ class _NoticeCreateScreenState extends State<NoticeCreateScreen> {
                               'createdAt': FieldValue.serverTimestamp(),
                               'resolved': false,
                             };
+                            
+                            if (imageUrl != null) {
+                              data['imageUrl'] = imageUrl;
+                            }
                             
                             if (_hasDueDate) {
                               data['publishUntil'] = Timestamp.fromDate(

@@ -40,21 +40,21 @@ class _AttendanceRecordScreenState extends State<AttendanceRecordScreen> {
     setState(() => _isLoading = true);
     try {
       final snap = await FirebaseFirestore.instance
-          .collection('stores')
-          .doc(widget.storeId)
           .collection('attendance')
-          .where('staffId', isEqualTo: widget.worker.id)
-          .orderBy('clockIn')
+          .where('storeId', isEqualTo: widget.storeId)
           .get();
 
       final all = snap.docs
           .map((d) => Attendance.fromJson({...d.data(), 'id': d.id}))
           .where((a) {
+            if (a.staffId != widget.worker.id) return false;
             final day = DateTime(a.clockIn.year, a.clockIn.month, a.clockIn.day);
             final start = DateTime(_startDate.year, _startDate.month, _startDate.day);
             final end = DateTime(_endDate.year, _endDate.month, _endDate.day);
             return !day.isBefore(start) && !day.isAfter(end);
           }).toList();
+
+      all.sort((a, b) => a.clockIn.compareTo(b.clockIn));
 
       setState(() {
         _records = all;
@@ -110,7 +110,22 @@ class _AttendanceRecordScreenState extends State<AttendanceRecordScreen> {
     return '$h시간 $m분';
   }
 
-  int get _totalMinutes => _records.fold(0, (sum, r) => sum + r.workedMinutes);
+  int _calculateNetMinutes(Attendance r) {
+    if (r.clockOut == null) return 0;
+    final stay = r.clockOut!.difference(r.clockIn).inMinutes;
+    if (stay <= 0) return 0;
+    
+    int breakMins = 0;
+    if (r.breakStart != null && r.breakEnd != null) {
+      breakMins = r.breakEnd!.difference(r.breakStart!).inMinutes;
+    } else if (widget.worker.breakMinutes > 0) {
+      breakMins = widget.worker.breakMinutes.toInt();
+    }
+    
+    return (stay - breakMins).clamp(0, stay);
+  }
+
+  int get _totalMinutes => _records.fold(0, (sum, r) => sum + _calculateNetMinutes(r));
 
   Future<void> _generatePdf() async {
     setState(() => _isSaving = true);
@@ -228,8 +243,15 @@ class _AttendanceRecordScreenState extends State<AttendanceRecordScreen> {
                     : 0;
                 String note = '';
                 if (r.attendanceStatus == 'Unplanned') note = '비예정';
-                if (r.isEditedByBoss) note = '수정됨';
-                if (r.isSpecialOvertime) note = '특별연장';
+                if (r.isSpecialOvertime) {
+                  note = note.isEmpty ? '특별연장' : '$note, 특별연장';
+                }
+                final bool useDefaultBreak = r.breakStart == null && widget.worker.breakMinutes > 0;
+                if (useDefaultBreak) {
+                  final text = '기본휴게 ${widget.worker.breakMinutes.toInt()}분 차감';
+                  note = note.isEmpty ? text : '$note, $text';
+                }
+                
                 return pw.TableRow(children: [
                   dataCell(_fmt(r.clockIn)),
                   dataCell(dayName),
@@ -238,7 +260,7 @@ class _AttendanceRecordScreenState extends State<AttendanceRecordScreen> {
                   dataCell(_fmtTime(r.breakStart)),
                   dataCell(_fmtTime(r.breakEnd)),
                   dataCell(note, center: false),
-                  dataCell(_fmtMinutes(r.workedMinutes)),
+                  dataCell(_fmtMinutes(_calculateNetMinutes(r))),
                 ]);
               }),
 
@@ -370,66 +392,37 @@ class _AttendanceRecordScreenState extends State<AttendanceRecordScreen> {
                           return Container(
                             color: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            child: Row(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // 날짜
-                                SizedBox(
-                                  width: 56,
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        _fmt(r.clockIn),
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                          color: isWeekend ? Colors.red : const Color(0xFF1A1A2E),
-                                        ),
-                                      ),
-                                      Text(
-                                        dayName,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: isWeekend ? Colors.red : Colors.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                // 출퇴근 시간
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          _timeChip('출근', _fmtTime(r.clockIn), Colors.green),
-                                          const SizedBox(width: 8),
-                                          _timeChip('퇴근', _fmtTime(r.clockOut), Colors.blue),
-                                          if (r.breakStart != null) ...[
-                                            const SizedBox(width: 8),
-                                            _timeChip('휴게', '${_fmtTime(r.breakStart)}~${_fmtTime(r.breakEnd)}', Colors.orange),
-                                          ],
-                                        ],
-                                      ),
-                                      if (r.isEditedByBoss) ...[
-                                        const SizedBox(height: 2),
-                                        const Text('사장님 수정', style: TextStyle(fontSize: 10, color: Colors.orange)),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                // 근무시간
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      _fmtMinutes(r.workedMinutes),
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                      '${_fmt(r.clockIn)} $dayName | 출근 ${_fmtTime(r.clockIn)} | 퇴근 ${_fmtTime(r.clockOut)}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: isWeekend ? Colors.red : const Color(0xFF1A1A2E),
+                                      ),
                                     ),
                                     if (r.clockOut == null)
-                                      const Text('미퇴근', style: TextStyle(fontSize: 10, color: Colors.red)),
+                                      const Text('미퇴근', style: TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.bold)),
                                   ],
+                                ),
+                                const SizedBox(height: 4),
+                                Builder(
+                                  builder: (context) {
+                                    final bool useDefaultBreak = r.breakStart == null && widget.worker.breakMinutes > 0;
+                                    final String breakText = r.breakStart != null && r.breakEnd != null 
+                                        ? '${_fmtTime(r.breakStart)} ~ ${_fmtTime(r.breakEnd)}'
+                                        : (useDefaultBreak ? '기본 자동 차감 ${widget.worker.breakMinutes.toInt()}분' : '-');
+                                    
+                                    return Text(
+                                      '↳ 휴게 $breakText | 실근로 ${_fmtMinutes(_calculateNetMinutes(r))}',
+                                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                    );
+                                  }
                                 ),
                               ],
                             ),

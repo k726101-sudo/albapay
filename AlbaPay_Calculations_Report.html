@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>알바급여 정석 - 노무 계산 로직 기술 명세서</title>
+    <style>
+        body {
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            color: #333;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background: #f4f7f6;
+        }
+        .page {
+            max-width: 800px;
+            margin: 20px auto;
+            background: #fff;
+            padding: 40px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 40px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        h3 {
+            color: #34495e;
+            margin-top: 20px;
+        }
+        p, li {
+            font-size: 11pt;
+            color: #555;
+        }
+        .code-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #3498db;
+            padding: 10px 15px;
+            font-family: monospace;
+            margin: 15px 0;
+            white-space: pre-wrap;
+            color: #c7254e;
+        }
+        .example-box {
+            background-color: #e8f6f3;
+            border-left: 4px solid #1abc9c;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .alert-box {
+            background-color: #fdf2e9;
+            border-left: 4px solid #e67e22;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        table, th, td {
+            border: 1px solid #ccc;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #ecf0f1;
+        }
+        @media print {
+            body { background: #fff; }
+            .page { margin: 0; padding: 0; box-shadow: none; max-width: 100%; }
+            .page-break { page-break-before: always; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <h1>알바급여 정석<br><small style="font-size: 16pt; color: #7f8c8d;">노무서류 및 급여 산출 로직 기술 보고서</small></h1>
+        
+        <p>본 문서(PDF)는 <strong>‘알바급여 정석(Alba Pay)’</strong> 시스템 내 소프트웨어적으로 구현된 각종 노무 산출 로직(급여, 수당, 4대보험, 퇴직금 등)을 상세히 설명하기 위해 작성되었습니다. 코드베이스(<code>PayrollCalculator</code>)의 실제 산식과 노무법 적용례를 기반으로 합니다.</p>
+
+        <h2>1. 상시근로자수 산정 로직</h2>
+        <p>상시근로자수는 근로계약 체결 및 수당(야간/연장/휴일) 발생의 핵심 지표입니다.</p>
+        
+        <h3>1.1. 원칙적 산정 로직 및 2분의 1 예외 규정</h3>
+        <p>상시근로자 수는 기본적으로 <strong>'총 연인원 ÷ 가동일수'</strong>로 산정하지만, 근로기준법 시행령 제7조의2에 따른 <strong>'2분의 1 규정'</strong>이 최종 판별의 핵심이 됩니다.</p>
+        <ul>
+            <li><strong>원칙(평균치 산정)</strong>: 정산 대상 기간 내 출근한 전체 근로자 수(연인원)를 해당 기간의 영업일수(가동일수)로 나눈 평균값.</li>
+            <li><strong>예외 1 (평균 5인 이상이나, 5인 미만으로 보는 경우)</strong>: 산정 평균이 5인 이상이라 하더라도, <strong>5인 미만으로 근무한 가동일수가 절반(1/2) 이상</strong>인 경우 5인 미만 사업장으로 취급합니다.</li>
+            <li><strong>예외 2 (평균 5인 미만이나, 5인 이상으로 보는 경우)</strong>: 산정 평균이 5인 미만이라 하더라도, <strong>5인 이상으로 근무한 가동일수가 절반(1/2) 미만</strong>이 아니므로 (즉, 절반 이상인 경우) 5인 이상 사업장으로 취급합니다.</li>
+        </ul>
+        <div class="example-box">
+            <strong>[계산 예시 1: 평균 5인 이상이지만 5인 미만으로 판정되는 사례]</strong><br>
+            - 정산 기간 (6일 가동): 월(3명) / 화(3명) / 수(3명) / 목(3명) / 금(10명) / 토(10명)<br>
+            - 총 연인원 32명 / 가동일수 6일 = <strong>평균 5.33명 (5인 이상)</strong><br>
+            - <strong>1/2 규정 적용</strong>: 가동일 6일 중 5명 미만인 날이 4일(월, 화, 수, 목)로 과반수(1/2 이상)를 차지함.<br>
+            - <strong>최종 판정</strong>: 절반 이상을 5인 미만으로 운영했으므로 <strong>👉 5인 미만 사업장으로 판정됨</strong>.
+        </div>
+        <div class="example-box">
+            <strong>[계산 예시 2: 평균 5인 미만이지만 5인 이상으로 판정되는 사례]</strong><br>
+            - 정산 기간 (6일 가동): 월(5명) / 화(5명) / 수(5명) / 목(5명) / 금(2명) / 토(1명)<br>
+            - 총 연인원 23명 / 가동일수 6일 = <strong>평균 3.83명 (5인 미만)</strong><br>
+            - <strong>1/2 규정 적용</strong>: 가동일 6일 중 5명 미만인 날이 2일(금, 토)로 1/2 미만임 (달리 말해 5인 이상인 날이 4일로 1/2 이상임).<br>
+            - <strong>최종 판정</strong>: 산정 기준 미달 일수가 1/2 미만이므로 <strong>👉 5인 이상 사업장으로 판정됨</strong>.
+        </div>
+        <div class="alert-box">
+            <strong>[시스템적 구현 및 예외 관리]</strong><br>
+            앱 로직(<code>isFiveOrMore</code>)은 출퇴근 기록의 <code>totalPersonDays / operatingDays</code>를 기본으로 산정하며, 노무 이슈 최소화를 위해 가상직원(<code>virtualStaffSchedules</code>) 배정 시나리오까지 반영하여 5인 기준 경계선에 있는 상태를 정밀하게 파악할 수 있도록 보조합니다.
+        </div>
+
+        <div class="page-break"></div>
+
+        <h2>2. 급여 계산 로직 (주휴수당, 4대보험, 세금)</h2>
+
+        <h3>2.1. 주휴수당 (Weekly Holiday Allowance)</h3>
+        <p>주휴수당은 1주일 동안 정해진 근로일을 개근한 자에게 유급 휴일을 부여하는 제도입니다.</p>
+        <ul>
+            <li><strong>발생 요건 (<code>isWeeklyHolidayEligible</code>)</strong>: 순수 근로시간(휴게시간 제외)이 <strong>주 15시간 이상</strong>이어야 합니다.</li>
+            <li><strong>결근 여부 산정</strong>: 해당 주(Week Segment)에 배정된 소정근로일과 실제 출퇴근 기록이 매칭되는지 확인(<code>_isPerfectAttendanceForWeek</code>)하여 만근을 검증합니다.</li>
+            <li><strong>주휴수당 산식</strong>: <code>(주간 산정 소정근로시간 / 40시간) × 8시간 × 시급</code> </li>
+        </ul>
+        <div class="example-box">
+            <strong>[예외 케이스 적용 프로세스 (노무 분쟁 방지 핵심 로직)]</strong><br>
+            - <strong>지각 및 조퇴 보호 방벽 (Tardiness Protection)</strong>: 만약 근로계약상 소정근로시간이 주 15시간 이상(예: 16시간)인 직원이, 지각이나 조퇴로 인해 실제 근무한 시간이 14.5시간으로 떨어졌다고 가정해 봅시다. 일부 사장님들은 "주 15시간 미만으로 일했으니 주휴수당을 안 줘도 된다"고 착각하지만, <strong>노동법상 조퇴/지각은 결근이 아니므로 주휴수당 발생 요건을 박탈할 수 없습니다.</strong> 엔진은 이를 완벽히 인지하여, 실제 일한 시간에 대한 급여만 차감(무노동 무임금)할 뿐, 주휴수당 배지는 정상적으로 산출해 냅니다.<br>
+            - <strong>무단결근 (<code>weeklyHolidayBlockedByAbsence</code>)</strong>: 계약이 주 3일(24시간)인데 1일을 무단 결근하여 16시간만 일했다면, 주 15시간은 넘겼지만 만근을 하지 못했습니다. 앱 시스템은 이를 감지하고 주휴수당을 기본 Block 처리합니다. 사장님이 수동으로 <code>manualWeeklyHolidayApproval</code>을 체크할 때만 예외적으로 지급합니다.<br>
+            - <strong>초과근무(대근) 상한 캡</strong>: 소정근로시간이 20시간인 직원이 연장근무를 통해 이번 주 50시간을 일했다 하더라도 주휴수당은 소정근로 상한액만을 베이스로 계산되며 연장분은 주휴수당 산정에서 제외됩니다.
+        </div>
+
+        <h3>2.2. 4대보험 및 세금 산정</h3>
+        <p>직원은 통상 '프리랜서(3.3%)'와 '근로기준법상 4대보험 가입자'로 나뉩니다.</p>
+        <ul>
+            <li><strong>비과세 식대 (<code>mealNonTaxable</code>)</strong>: 시스템상 사장님이 매월 지급하는 식대를 입력 시, 세법에 의거 <strong>월 최대 20만 원</strong>까지만 비과세 대상에서 제외하여 소득을 잡습니다. (<code>taxableWage = [총급여 - 비과세식대]</code>)</li>
+            <li><strong>사업소득세</strong>: <code>applyWithholding33</code> 체크 시, 과세대상급여의 3.3%가 공제됩니다.</li>
+            <li><strong>4대보험 간편 로직</strong>:
+                각종 체크 여부에 따라: <code>국민연금(4.5%)</code>, <code>건강보험(요양포함 약 4.0%)</code>, <code>고용보험(0.9%)</code>를 합산하여 요율을 과세대상액에 곱해 자동 공제(<code>insuranceDeduction</code>)를 제안합니다. 산재보험은 100% 사업주 부담이므로 직원 공제액에는 포함되지 않습니다.
+            </li>
+        </ul>
+        
+        <h3>2.3. 근로자의 날(5월 1일) 법정 유급휴일 특례 적용</h3>
+        <p>근로자의 날 제정에 관한 법률에 따라 <strong>매년 5월 1일</strong>은 5인 미만 사업장을 포함한 <strong>모든 근로자에게 법정 유급휴일</strong>로 보장됩니다.</p>
+        <ul>
+            <li><strong>엔진 강제 편입 로직</strong>: 급여 정산 기간(<code>startDate ~ endDate</code>) 내에 5월 1일이 포함되어 있는 경우, 시스템은 직원이 해당 일에 출근하지 않아도 무조건 <code>[1일 소정근로시간(hoursMultiplier) × 시급]</code> 만큼을 <strong>유급휴일 기본 수당</strong>으로 급여 총액에 자동 가산합니다.</li>
+            <li><strong>근무 시 가산 (휴일근로 가산)</strong>: 만약 5월 1일에 실제로 출퇴근 기록이 존재한다면, 5인 이상 사업장인지 여부를 판단하여:
+                <ul>
+                    <li><strong>5인 미만</strong>: [일한 시간 × 시급 (1.0배)]을 순수 근로 임금으로 합산하여, 결과적으로 2.0배 수준의 돈을 받습니다. (유급휴일 1.0 + 근로 1.0)</li>
+                    <li><strong>5인 이상</strong>: [일한 시간 × 시급 × 1.5배] 휴일근로가산수당이 발동되어 합산되므로 총 2.5배 수준의 프리미엄을 받게 됩니다.</li>
+                </ul>
+            </li>
+        </ul>
+
+        <div class="page-break"></div>
+
+        <h2>3. 5인 이상 사업장 각종 수당 계산 (야간, 연장, 연차)</h2>
+        <p>상시근로자가 5인 이상인 경우 앱 내에서 통상임금의 50%를 가산하는 로직이 적용됩니다.</p>
+
+        <h3>3.1. 야간 및 연장 근로 수당</h3>
+        <table style="font-size: 10pt;">
+            <tr>
+                <th>수당 종류</th>
+                <th>대상 조건 및 시간 (<code>premiumTargetMinutes</code>)</th>
+                <th>가산율 산식</th>
+            </tr>
+            <tr>
+                <td><strong>연장근로수당</strong></td>
+                <td>하루 순수 근로시간이 <strong>8시간(480분)</strong>을 초과한 시간.</td>
+                <td>초과 근무시간 × 시급 × <strong>0.5배</strong></td>
+            </tr>
+            <tr>
+                <td><strong>야간근로수당</strong></td>
+                <td>오후 10시 (22:00) ~ 익일 오전 6시 (06:00) 사이에 겹치는 근로시간. (<code>_overlapNightMinutes</code> 로직)</td>
+                <td>해당 시간 × 시급 × <strong>0.5배</strong></td>
+            </tr>
+            <tr>
+                <td><strong>휴일근로수당</strong></td>
+                <td>시스템 로직 상, 주말(토/일) 알바는 해당 요일이 소정근로일이므로 1.5배 관행 가산에서 시스템적 예외(false) 처리. (향후 공휴일 API 전용)</td>
+                <td>해당 시 -</td>
+            </tr>
+        </table>
+        
+        <h3>3.2. 연차 저금통 시스템 (Annual Leave Summary)</h3>
+        <p>근로기준법 제60조에 의거, 요건을 충족한 자에게 부여함을 연차 저금통 모듈로 구현했습니다.</p>
+        <ul>
+            <li><strong>초단시간 근로자 발생 제외</strong>: 주 15시간 미만 근무자는 연차가 시스템에서 생성되지 않습니다.</li>
+            <li><strong>1년 미만 근속자</strong>: 입사일 기준 매 1개월 단위 (예: 5/10 ~ 6/9) 만근 시 연차 1개가 즉시 적립 (최대 11개).</li>
+            <li><strong>1년 이상 근속자</strong>: 1년 사이의 출근율이 <strong>80% 이상</strong>일 경우, 1년 단위 계약 종료마다 15개의 연차가 생성됩니다.</li>
+            <li><strong>단시간 근로자 연차 1일 가치 보정 (이중 차감 불법 방지)</strong>: 단시간 근로자에게 연차 부여 시 '일수'를 비례로 깎고 '시간'도 8시간 미만으로 깎는 더블 디스카운트(Double Discount)를 원천 차단합니다. 일수는 통상 근로자와 동일하게 15일로 정상 생성하되, 시스템 상의 <code>hoursMultiplier</code> (주소정/40 * 8h)를 통해서만 정산 가치를 비례로 환산합니다.</li>
+            <li><strong>연차 사용촉진 상태 관리 (Promotion Status)</strong>: 미사용 연차에 대한 서면 촉진 프로세스를 <code>active</code>, <code>completed</code> 상태뿐만 아니라 촉진 기한을 놓쳤거나 만료된 구획(<code>expired</code>)까지 정밀하게 분리 추적합니다. 기한이 만료된 연차는 자동으로 촉진 실패 구획으로 이관되어 UI에서 지급 의무액으로 즉시 반영됩니다.</li>
+        </ul>
+        <div class="example-box">
+            <strong>[연차 소멸 및 수동 조정 케이스 (Demo 체험 모드 활용)]</strong><br>
+            시스템은 <code>blockedAnnualRateDetail</code> 을 통해 출근율이 80%에 미치지 못하면 강력히 해당 연도의 15개 연차 발생을 방어(블로킹)합니다. 앱 기록이 전혀 없는 가상 테스트(<code>DEMO_</code> 초대코드 연동 계정)에 한해서는 출근율 미스가 아닌 한 기본 만근으로 소급 추정하여 모든 엔진 구동을 100% 동일하게 체험해 볼 수 있습니다. 사장님이 수동으로 연차를 보정할 수도 있습니다.
+        </div>
+
+        <div class="page-break"></div>
+
+        <h2>4. 노무서류 작성 스마트 워크플로우</h2>
+        <p>알바급여 정석에서는 대면 없는 비대면 스마트 전자 근로 서류 교부 체계를 지원하며, 서명의 법적 위변조 방지를 강력하게 보장합니다.</p>
+        <ol>
+            <li><strong>사장님 앱 사업장 구비</strong>: 앱 실행 시 로그인 완료 후, 가맹점 및 노무 규정 (휴게시간 자율/고정 등)을 세팅.</li>
+            <li><strong>새 직원 등록 및 스케줄링</strong>: 직원 메뉴에서 신규 직원의 휴대폰 번호, 근무 요일코드(<code>scheduledWorkDays</code>), 월~일 시급, 휴무일을 매핑하여 가상 데이터베이스에 반영합니다.</li>
+            <li><strong>직원 초대 및 모바일 연동</strong>: 사장님이 <strong>초대코드</strong> 혹은 카카오톡 문자를 발송 → 알바(직원)가 알바급여 정석 다운로드 후 코드 입력 시 사장님 DB와 자동 링크.</li>
+            <li><strong>노무서류 자동 렌더링 및 메타데이터 서명 (E-Sign)</strong>: 직원의 급여, 휴게시간 규정, 소정근로일에 매칭되는 <strong>전자 근로계약서 PDF</strong>가 백그라운드 <code>pdf_generator</code>에 의해 생성됩니다. 사장님과 직원이 터치 패드로 전자 서명을 기록하는 즉시, <strong>서명 시점의 타임스탬프, 통신 IP 주소, 그리고 기기 고유값(Device ID)</strong>이 문서의 메타데이터로 영원히 결합되어 부인방지(Non-repudiation) 및 법적 효력을 완벽히 증명합니다.</li>
+            <li><strong>보관/교부 완료</strong>: 암호화된 PDF 문서는 앱 내 문서함에 영구 보관되며 법적 교부의무를 만족합니다.</li>
+        </ol>
+
+        <h2>5. 퇴직금 최종 정산 로직 (v2.0 통상임금 방어 로직 적용)</h2>
+        <p>직원의 퇴사 시 시스템은 <code>calculateExitSettlement</code> 로직을 가동하여 가장 합법적이고 근로자에게 불이익이 없는 최종 급여 및 퇴직금 정산 리포트를 산출합니다.</p>
+        <ul>
+            <li><strong>퇴직금 지급 요건 (<code>isSeveranceEligible</code>)</strong>: 
+                <ul>
+                    <li>1. 가입일(JoinDate)로부터 퇴사일(ExitDate)까지의 <strong>계속근로일수가 365일 이상</strong>.</li>
+                    <li>2. 정산 기간의 주 평균 총 순수 근로시간이 15시간 이상.</li>
+                </ul>
+            </li>
+            <li><strong>1. 산정기준 - 1일 평균임금 도출</strong>: 
+                퇴사일 직전 <strong>3개월(90일) 간의 실제 지급 총 임금(기본급 + 주휴수당)</strong>과 <strong>전년도 발생 미사용 연차수당 가산분(3/12)</strong>을 합산한 후 90일로 나누어 1일 평균임금을 구합니다.
+            </li>
+            <li><strong>2. 산정기준 - 1일 통상임금 도출 및 비교 (근로기준법 제2조 2항 방어 로직)</strong>: 
+                시급제/단시간 근로자는 무급 휴일 등의 이유로 90일로 전체를 나눌 시 평균임금이 불합리하게 낮아집니다. 시스템은 <strong>[1일 통상임금 (1일 소정근로시간 × 시급)]</strong>을 동시에 계산하여 평균임금과 비교한 뒤, <strong>더 큰 금액</strong>을 최종 기준 일급으로 채택합니다.<br>
+                <code>[최종 퇴직금 = (Max(평균임금, 통상임금) × 30일) × (총 재직일수 / 365)]</code>
+            </li>
+        </ul>
+
+        <div class="example-box">
+            <strong>[단시간 근로자 이중 차감 방지 및 누락분 완벽 보완]</strong><br>
+            단시간 근로자 퇴직금 산정 시, 일수가 깎이고 시간이 또 한 번 깎이는 이른바 <strong>'더블 디스카운트(Double Discount)' 문제를 통상임금 하한선 로직을 통해 완벽하게 방어</strong>했습니다. 또한 3개월 총액 산정 시 누락되기 쉬운 주휴수당분과 연차수당 3/12 가산액을 시스템이 자동으로 계산에 편입시킵니다.
+        </div>
+
+        <div class="alert-box">
+            <strong>[데이터 결여 시 처리(Fallback)]</strong><br>
+            만일 시스템 도입 초기이거나 기록이 부실하여(출근 기록 30일 미만) 계산이 어그러지는 경우, 불완전한 기록을 더하는 대신 <strong>소정근로시간 기반 이론적 3개월분 총 임금액(주휴수당 포함)을 역산하여 시스템적으로 보완</strong>합니다.
+            <br><br>
+            또한, 잔여 연차가 있다면 <code>[남은 연차 × 시급 × 단시간 1일 비례시간(hoursMultiplier)]</code>으로 정확히 환산하여 퇴사월 급여표에 <strong>잔여 연차수당 몫</strong>으로 자동 지급 청구시킵니다.
+        </div>
+
+        <br>
+        <p style="text-align:center; margin-top:50px; color:#aaa;">- 알바급여 정석(Alba Pay) 노무/기술 요약 보고서 끝 -</p>
+    </div>
+</body>
+</html>

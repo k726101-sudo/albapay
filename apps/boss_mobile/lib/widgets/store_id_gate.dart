@@ -32,7 +32,28 @@ class StoreIdGate extends StatelessWidget {
              body: Center(
                child: Padding(
                  padding: const EdgeInsets.all(24.0),
-                 child: Text('서버 에러 발생:\n${data['demoError']}', style: const TextStyle(color: Colors.red, fontSize: 18)),
+                 child: Column(
+                   mainAxisAlignment: MainAxisAlignment.center,
+                   children: [
+                     Text('서버 에러 발생:\n${data['demoError']}', style: const TextStyle(color: Colors.red, fontSize: 16)),
+                     const SizedBox(height: 24),
+                     FilledButton.icon(
+                       onPressed: () async {
+                         // demoError 클리어 후 재시도
+                         await FirebaseFirestore.instance.collection('users').doc(uid).update({'demoError': FieldValue.delete()});
+                       },
+                       icon: const Icon(Icons.refresh),
+                       label: const Text('다시 시도'),
+                     ),
+                     const SizedBox(height: 12),
+                     TextButton(
+                       onPressed: () async {
+                         await FirebaseAuth.instance.signOut();
+                       },
+                       child: const Text('로그아웃', style: TextStyle(color: Colors.grey)),
+                     ),
+                   ],
+                 ),
                ),
              ),
            );

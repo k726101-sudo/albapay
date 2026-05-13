@@ -1,13 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_logic/shared_logic.dart';
 import 'package:signature/signature.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:network_info_plus/network_info_plus.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'package:url_launcher/url_launcher.dart';
+import '../../../utils/pdf/pdf_generator_service.dart';
 class DocumentSigningScreen extends StatefulWidget {
   final LaborDocument document;
   /// 같은 직원의 전체 서류 목록 - 계약서 서명 시 보관용 서류들도 함께 종결 처리
@@ -49,67 +47,28 @@ class _DocumentSigningScreenState extends State<DocumentSigningScreen> {
     }
   }
 
-  Future<Map<String, dynamic>> _captureMetadata() async {
-    final metadata = <String, dynamic>{
-      'timestamp': DateTime.now().toIso8601String(),
-      'role': 'employee',
-    };
-
-    // 1. 기기 정보
-    try {
-      final deviceInfo = DeviceInfoPlugin();
-      if (kIsWeb) {
-        final webBrowserInfo = await deviceInfo.webBrowserInfo;
-        metadata['device'] = webBrowserInfo.userAgent;
-        metadata['deviceId'] = webBrowserInfo.platform ?? 'web';
-      } else if (defaultTargetPlatform == TargetPlatform.android) {
-        final androidInfo = await deviceInfo.androidInfo;
-        metadata['device'] = '${androidInfo.brand} ${androidInfo.model}';
-        metadata['deviceId'] = androidInfo.id;
-      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-        final iosInfo = await deviceInfo.iosInfo;
-        metadata['device'] = '${iosInfo.name} ${iosInfo.model}';
-        metadata['deviceId'] = iosInfo.identifierForVendor ?? 'unknown';
-      } else {
-        metadata['device'] = 'Unknown Platform';
-        metadata['deviceId'] = 'Unknown';
-      }
-    } catch (e) {
-      metadata['device'] = 'Error capturing device info';
-      metadata['deviceId'] = 'Unknown';
-    }
-
-    // 2. IP 주소
-    try {
-      final info = NetworkInfo();
-      metadata['ipAddress'] = await info.getWifiIP() ?? 'Unknown IP';
-    } catch (e) {
-      metadata['ipAddress'] = 'Error capturing IP';
-    }
-
-    // 3. GPS
-    try {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
-        final position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.medium,
-            timeLimit: Duration(seconds: 3),
-          ),
+  Future<void> _openPdf() async {
+    final pdfUrl = widget.document.pdfUrl;
+    if (pdfUrl == null || pdfUrl.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('PDF 서류가 아직 생성되지 않았거나 주소가 없습니다. 사장님께 문의해 주세요.')),
         );
-        metadata['gps'] = '${position.latitude}, ${position.longitude}';
-      } else {
-        metadata['gps'] = 'Permission Denied';
+      }
+      return;
+    }
+    final url = Uri.parse(pdfUrl);
+    try {
+      final success = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!success) {
+        debugPrint('url_launcher could not launch: $pdfUrl');
       }
     } catch (e) {
-      metadata['gps'] = 'Error capturing GPS';
+      debugPrint('Error launching PDF URL: $e');
     }
-
-    return metadata;
   }
+
+// Deleted local _captureMetadata inline.
 
   Future<void> _handleSign() async {
     if (!_isPhoneVerified) {
@@ -143,7 +102,7 @@ class _DocumentSigningScreenState extends State<DocumentSigningScreen> {
       );
       final signatureUrl = await uploadTask.ref.getDownloadURL();
 
-      final metadata = await _captureMetadata();
+      final metadata = await SecurityMetadataHelper.captureMetadata('employee');
       final now = AppClock.now();
 
       // 알바생 서명 메타데이터 (2차 메타데이터) — 사장님 1차 메타 위에 결합
@@ -153,6 +112,7 @@ class _DocumentSigningScreenState extends State<DocumentSigningScreen> {
       };
 
       // ── 1. 계약서(현재 서류) 서명 완료 처리 ──
+      final retentionDate = PdfArchiveService.calculateRetentionUntil(widget.document);
       final signedDoc = LaborDocument(
         id: widget.document.id,
         storeId: widget.document.storeId,
@@ -171,8 +131,33 @@ class _DocumentSigningScreenState extends State<DocumentSigningScreen> {
         signatureMetadata: employeeMeta, // 알바생 메타 (2차)
         bossSignatureUrl: widget.document.bossSignatureUrl,
         bossSignatureMetadata: widget.document.bossSignatureMetadata, // 사장님 메타 (1차) 유지
+        documentHash: widget.document.documentHash, // ★ 해시 유지 (무결성 증빙)
+        retentionUntil: retentionDate, // ★ 보관 만료일 (최소 3년)
       );
       await _dbService.saveDocument(signedDoc);
+
+      // ── 1-1. PDF 확정본 R2 아카이브 (서명 포함) ──
+      // 계약서 타입일 때만 최종 PDF 생성 후 R2에 immutable 보관
+      if (signedDoc.type == DocumentType.contract_full ||
+          signedDoc.type == DocumentType.contract_part) {
+        try {
+          Map<String, dynamic> contractData = {};
+          if (signedDoc.dataJson != null && signedDoc.dataJson!.isNotEmpty) {
+            try { contractData = jsonDecode(signedDoc.dataJson!); } catch (_) {}
+          }
+          final pdfBytes = signedDoc.type == DocumentType.contract_full
+              ? await PdfGeneratorService.generateFullContract(
+                  document: signedDoc, contractData: contractData)
+              : await PdfGeneratorService.generatePartTimeContract(
+                  document: signedDoc, contractData: contractData);
+          await PdfArchiveService.instance.archiveSignedDocument(
+            doc: signedDoc,
+            pdfBytes: pdfBytes,
+          );
+        } catch (archiveError) {
+          debugPrint('⚠️ PDF R2 아카이브 실패 (서명은 정상 완료): $archiveError');
+        }
+      }
 
       // ── 2. 같은 직원의 보관용 서류들 (체크리스트, 동의서 등) 일괄 종결 ──
       // 알바생이 계약서에 서명하는 순간을 '교부 완료' 기점으로 보고 모든 번들 문서 종결
@@ -197,9 +182,13 @@ class _DocumentSigningScreenState extends State<DocumentSigningScreen> {
           deliveryConfirmedAt: now, // 동일 교부 완료 타임스탬프
           expiryDate: bundleDoc.expiryDate,
           dataJson: bundleDoc.dataJson,
-          signatureMetadata: bundleDoc.signatureMetadata,
+          signatureMetadata: {
+            ...bundleDoc.signatureMetadata ?? {},
+            'employee': metadata,
+          },
           bossSignatureUrl: bundleDoc.bossSignatureUrl,
           bossSignatureMetadata: bundleDoc.bossSignatureMetadata,
+          documentHash: bundleDoc.documentHash, // ★ 해시 유지 (무결성 증빙)
         );
         await _dbService.saveDocument(closedDoc);
       }
@@ -257,6 +246,55 @@ class _DocumentSigningScreenState extends State<DocumentSigningScreen> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // ★ 문서 무결성 검증 배지
+            Builder(builder: (_) {
+              final doc = widget.document;
+              if (doc.documentHash != null && doc.documentHash!.isNotEmpty) {
+                final recalculated = SecurityMetadataHelper.generateDocumentHash(
+                  type: doc.type.name,
+                  staffId: doc.staffId,
+                  content: doc.content,
+                  dataJson: doc.dataJson,
+                  createdAt: doc.createdAt.toIso8601String(),
+                );
+                final isValid = recalculated == doc.documentHash;
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: isValid ? const Color(0xFFE8F5E9) : const Color(0xFFFDE8E8),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: isValid ? const Color(0xFF4CAF50) : const Color(0xFFE53935)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isValid ? Icons.verified : Icons.warning_amber_rounded,
+                        size: 18,
+                        color: isValid ? const Color(0xFF4CAF50) : const Color(0xFFE53935),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          isValid
+                              ? '✅ 원본 문서 확인됨 — SHA-256 무결성 검증 통과'
+                              : '⚠️ 문서 위변조 감지 — 해시값 불일치. 서명 전 관리자에게 문의하세요.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isValid ? const Color(0xFF2E7D32) : const Color(0xFFC62828),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return const SizedBox.shrink(); // 이전 버전 문서 — 해시 없음
+            }),
+
             // 계약서 내용
             Container(
               padding: const EdgeInsets.all(16),
@@ -268,9 +306,20 @@ class _DocumentSigningScreenState extends State<DocumentSigningScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: SingleChildScrollView(
-                child: Text(widget.document.content, style: const TextStyle(height: 1.5)),
+                child: Text(widget.document.content.isEmpty ? '내용이 없습니다.' : widget.document.content, style: const TextStyle(height: 1.5)),
               ),
             ),
+            if (widget.document.pdfUrl != null && widget.document.pdfUrl!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _openPdf,
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('정식 PDF 계약서 보기'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.blueGrey,
+                ),
+              ),
+            ],
             const SizedBox(height: 32),
             if (!_isPhoneVerified)
               _buildVerificationSection()

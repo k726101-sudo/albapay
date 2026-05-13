@@ -27,30 +27,31 @@ class Shift {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'staffId': staffId,
-        'storeId': storeId,
-        'startTime': startTime.toIso8601String(),
-        'endTime': endTime.toIso8601String(),
-        'totalStayMinutes': totalStayMinutes,
-        'breakMinutes': breakMinutes,
-        'isPaidBreak': isPaidBreak,
-        'pureLaborMinutes': pureLaborMinutes,
-        'memo': memo,
-      };
+    'id': id,
+    'staffId': staffId,
+    'storeId': storeId,
+    'startTime': startTime.toIso8601String(),
+    'endTime': endTime.toIso8601String(),
+    'totalStayMinutes': totalStayMinutes,
+    'breakMinutes': breakMinutes,
+    'isPaidBreak': isPaidBreak,
+    'pureLaborMinutes': pureLaborMinutes,
+    'memo': memo,
+  };
 
   factory Shift.fromJson(Map<String, dynamic> json) => Shift(
-        id: json['id'],
-        staffId: json['staffId'],
-        storeId: json['storeId'],
-        startTime: DateTime.parse(json['startTime']),
-        endTime: DateTime.parse(json['endTime']),
-        totalStayMinutes: (json['totalStayMinutes'] is num)
-            ? (json['totalStayMinutes'] as num).toInt()
-            : 0,
-        breakMinutes:
-            (json['breakMinutes'] is num) ? (json['breakMinutes'] as num).toInt() : 0,
-        isPaidBreak: json['isPaidBreak'] == true,
-        memo: json['memo'],
-      );
+    id: json['id'],
+    staffId: json['staffId'],
+    storeId: json['storeId'],
+    startTime: DateTime.parse(json['startTime']),
+    endTime: DateTime.parse(json['endTime']),
+    totalStayMinutes: (json['totalStayMinutes'] is num)
+        ? (json['totalStayMinutes'] as num).toInt()
+        : 0,
+    breakMinutes: (json['breakMinutes'] is num)
+        ? (json['breakMinutes'] as num).toInt()
+        : 0,
+    isPaidBreak: json['isPaidBreak'] == true,
+    memo: json['memo'],
+  );
 }

@@ -13,6 +13,8 @@ import 'hiring_checklist_screen.dart';
 import 'worker_record_screen.dart';
 import 'night_consent_screen.dart';
 import 'attendance_record_screen.dart';
+import 'leave_promotion_screen.dart';
+import 'document_wizard_screen.dart';
 
 class DocumentManagementScreen extends StatefulWidget {
   const DocumentManagementScreen({super.key});
@@ -75,8 +77,36 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
                             subtitle: Text('완성도: $completedDocs/${workerDocs.length}'),
                             children: [
                               ...workerDocs.map(
-                                (doc) => ListTile(
-                                  leading: Container(
+                                (doc) => Dismissible(
+                                  key: Key(doc.id),
+                                  direction: DismissDirection.endToStart,
+                                  confirmDismiss: (direction) async {
+                                    return await showDialog(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        title: const Text('서류 삭제'),
+                                        content: const Text('이 서류를 삭제하시겠습니까? (완료된 서류도 강제 삭제됩니다)'),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(ctx, true),
+                                            child: const Text('삭제', style: TextStyle(color: Colors.red)),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                  onDismissed: (direction) async {
+                                    await DatabaseService().deleteDocument(storeId, doc.id);
+                                  },
+                                  background: Container(
+                                    color: Colors.red,
+                                    alignment: Alignment.centerRight,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    child: const Icon(Icons.delete, color: Colors.white),
+                                  ),
+                                  child: ListTile(
+                                    leading: Container(
                                     width: 30,
                                     height: 30,
                                     decoration: BoxDecoration(
@@ -144,9 +174,8 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
                                       );
                                       return;
                                     }
-                                    // 임금명세서 → PDF 내보내기 페이지
-                                    if (doc.type == DocumentType.wageStatement ||
-                                        doc.type == DocumentType.wage_ledger) {
+                                    // 임금대장 → PDF 내보내기 페이지
+                                    if (doc.type == DocumentType.wage_ledger) {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
@@ -169,6 +198,21 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
                                       );
                                       return;
                                     }
+                                    // 연차 사용촉진 통보서 → 전용 화면
+                                    if (doc.type == DocumentType.leave_promotion_first ||
+                                        doc.type == DocumentType.leave_promotion_second) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => LeavePromotionScreen(
+                                            worker: worker,
+                                            document: doc,
+                                            step: doc.type == DocumentType.leave_promotion_first ? 1 : 2,
+                                          ),
+                                        ),
+                                      );
+                                      return;
+                                    }
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
@@ -182,9 +226,43 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
                                     );
                                   },
                                   subtitle: Text(_statusSubtitle(doc)),
-                                  trailing: _buildStatusBadge(doc.status),
+                                  trailing: _buildStatusBadge(doc),
+                                  ),
                                 ),
                               ),
+                            // ── 순서대로 서류 작성 위자드 버튼 (draft 서류가 있을 때) ──
+                            Builder(builder: (ctx) {
+                              final draftDocs = workerDocs
+                                  .where((d) => d.status == 'draft')
+                                  .toList();
+                              if (draftDocs.isEmpty) return const SizedBox.shrink();
+                              return Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                child: FilledButton.icon(
+                                  onPressed: () async {
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => DocumentWizardScreen(
+                                          worker: worker,
+                                          storeId: storeId,
+                                          documents: workerDocs,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.format_list_numbered_rounded, size: 18),
+                                  label: const Text('순서대로 서류 작성'),
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size(double.infinity, 48),
+                                    backgroundColor: const Color(0xFF1a6ebd),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
                             // ── 일괄 서명 버튼 (초안 서류가 1개 이상일 때만 표시) ──
                             Builder(builder: (ctx) {
                               final draftDocs = workerDocs
@@ -231,7 +309,32 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
                                 ),
                                 icon: const Icon(Icons.note_add),
                                 label: const Text('새 서류 작성 (템플릿)'),
-                                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: const Size(double.infinity, 44),
+                                  backgroundColor: Colors.blueAccent,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            // ── 출퇴근 기록부 영구 확인 버튼 (동적 생성) ──
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16.0).copyWith(bottom: 16.0),
+                              child: OutlinedButton.icon(
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AttendanceRecordScreen(
+                                      worker: worker,
+                                      storeId: storeId,
+                                    ),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.access_time, color: Colors.blueGrey),
+                                label: const Text('출퇴근 기록부 확인 및 PDF 발급 🖨️', style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size(double.infinity, 44),
+                                  side: BorderSide(color: Colors.grey.shade300),
+                                ),
                               ),
                             ),
                           ],
@@ -250,6 +353,7 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
   }
 
   String _statusSubtitle(LaborDocument doc) {
+    if (doc.deliveryConfirmedAt != null) return '수령 확인 완료';
     switch (doc.status) {
       case 'draft':
         return '작성 필요';
@@ -259,14 +363,16 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
       case 'boss_signed':
       case 'signed':
       case 'sent':
+        return '교부 완료 (수령 대기)';
       case 'delivered':
-        return '작성 완료';
+        return '수령 확인 완료';
       default:
         return '대기 중';
     }
   }
 
-  Widget _buildStatusBadge(String status) {
+  Widget _buildStatusBadge(LaborDocument doc) {
+    final String status = doc.deliveryConfirmedAt != null ? 'delivered' : doc.status;
     final Map<String, Map<String, dynamic>> statusMap = {
       'draft': {
         'label': '작성 필요',
@@ -294,14 +400,14 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
         'text': const Color(0xFF286b3a),
       },
       'sent': {
-        'label': '작성 완료',
+        'label': '교부 완료',
         'bg': const Color(0xFFEAF3DE),
         'text': const Color(0xFF286b3a),
       },
       'delivered': {
-        'label': '작성 완료',
-        'bg': const Color(0xFFEAF3DE),
-        'text': const Color(0xFF286b3a),
+        'label': '수령 완료',
+        'bg': const Color(0xFFE0F2FE),
+        'text': const Color(0xFF0284C7),
       },
     };
 
@@ -322,7 +428,6 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
       ),
     );
   }
-
   IconData _getDocIcon(DocumentType type) {
     switch (type) {
       case DocumentType.contract_full:
@@ -344,6 +449,12 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
         return Icons.request_quote_outlined;
       case DocumentType.annual_leave_ledger:
         return Icons.event_available_outlined;
+      case DocumentType.leave_promotion_first:
+        return Icons.notification_important_outlined;
+      case DocumentType.leave_promotion_second:
+        return Icons.event_available_outlined;
+      case DocumentType.resignation_letter:
+        return Icons.exit_to_app;
       default:
         return Icons.article_outlined;
     }
@@ -370,6 +481,12 @@ class _DocumentManagementScreenState extends State<DocumentManagementScreen> {
         return const Color(0xFFE64A19);
       case DocumentType.annual_leave_ledger:
         return const Color(0xFF00796B);
+      case DocumentType.leave_promotion_first:
+        return const Color(0xFFE65100);
+      case DocumentType.leave_promotion_second:
+        return const Color(0xFFBF360C);
+      case DocumentType.resignation_letter:
+        return const Color(0xFF757575);
       default:
         return const Color(0xFF888888);
     }

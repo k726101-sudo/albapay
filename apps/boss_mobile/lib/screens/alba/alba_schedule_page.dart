@@ -45,7 +45,7 @@ class _AlbaSchedulePageState extends State<AlbaSchedulePage> with SingleTickerPr
     return _db
         .collection('stores')
         .doc(widget.storeId)
-        .collection('workers')
+        .collection('workerProfiles') // 비민감 필드만 (이름/근무시간)
         .where('status', isEqualTo: 'active')
         .get()
         .then((s) => s.docs);
@@ -149,6 +149,35 @@ class _AlbaSchedulePageState extends State<AlbaSchedulePage> with SingleTickerPr
                 ],
               ),
             ),
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    onPressed: () => setState(() => _weekOffset--),
+                  ),
+                  Text(
+                    _weekOffset == 0
+                        ? '이번 주'
+                        : _weekOffset == -1
+                            ? '지난 주'
+                            : _weekOffset == 1
+                                ? '다음 주'
+                                : _weekOffset < 0
+                                    ? '${-_weekOffset}주 전'
+                                    : '${_weekOffset}주 후',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    onPressed: () => setState(() => _weekOffset++),
+                  ),
+                ],
+              ),
+            ),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -166,6 +195,7 @@ class _AlbaSchedulePageState extends State<AlbaSchedulePage> with SingleTickerPr
 
   // Helper to sync tab index when swiped
   int _index = 0;
+  int _weekOffset = 0;
 
   // ─────────────────────────────────────────
   // Tab 1: 이번 주 내 근무표 (리스트)
@@ -180,7 +210,8 @@ class _AlbaSchedulePageState extends State<AlbaSchedulePage> with SingleTickerPr
         }
         final now = AppClock.now();
         final monday = DateTime(now.year, now.month, now.day)
-            .subtract(Duration(days: now.weekday - DateTime.monday));
+            .subtract(Duration(days: now.weekday - DateTime.monday))
+            .add(Duration(days: 7 * _weekOffset));
         const labels = ['월', '화', '수', '목', '금', '토', '일'];
 
         return ListView.builder(
@@ -282,7 +313,7 @@ class _AlbaSchedulePageState extends State<AlbaSchedulePage> with SingleTickerPr
       builder: (context, workersSnap) {
         final workers = workersSnap.data ?? [];
         final now = AppClock.now();
-        final weekStart = now.subtract(Duration(days: now.weekday % 7));
+        final weekStart = now.subtract(Duration(days: now.weekday % 7)).add(Duration(days: 7 * _weekOffset));
 
         return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
           future: _allWorkersRosterFuture(),
@@ -377,30 +408,52 @@ class _AlbaSchedulePageState extends State<AlbaSchedulePage> with SingleTickerPr
                               date: date,
                               rosterDayDoc: workerRoster[rosterDateKey(date)],
                             );
+                            final rosterDoc = workerRoster[rosterDateKey(date)];
+                            final isSubstitution = rosterDoc?['isSubstitution'] == true;
+                            final isSubstitutedOut = rosterDoc?['isOff'] == true && rosterDoc?['substitutedBy'] != null;
+                            final originalWorkerName = rosterDoc?['originalWorkerName']?.toString();
                             return Expanded(
                               child: GestureDetector(
                                 onTap: shift != null ? () => _showShiftActions(date, shift, w, wId) : null,
                                 child: Container(
                                   margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
-                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
                                   decoration: BoxDecoration(
                                     color: shift != null
-                                        ? (isMe ? const Color(0xFF1565C0).withValues(alpha: 0.1) : Colors.green.shade50)
-                                        : Colors.transparent,
+                                        ? (isSubstitution
+                                            ? Colors.orange.shade50
+                                            : isMe ? const Color(0xFF1565C0).withValues(alpha: 0.1) : Colors.green.shade50)
+                                        : (isSubstitutedOut ? Colors.grey.shade50 : Colors.transparent),
                                     borderRadius: BorderRadius.circular(6),
-                                    border: shift != null ? Border.all(color: isMe ? const Color(0xFF1565C0).withValues(alpha: 0.2) : Colors.green.shade100) : null,
+                                    border: shift != null
+                                        ? Border.all(color: isSubstitution
+                                            ? Colors.orange.shade200
+                                            : isMe ? const Color(0xFF1565C0).withValues(alpha: 0.2) : Colors.green.shade100)
+                                        : (isSubstitutedOut ? Border.all(color: Colors.grey.shade200) : null),
                                   ),
                                   alignment: Alignment.center,
                                   child: shift != null
-                                      ? Text(
-                                          shift.checkInHm,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: isMe ? const Color(0xFF1565C0) : Colors.green.shade700,
-                                          ),
+                                      ? Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (isSubstitution)
+                                              Text('대타', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.orange.shade700)),
+                                            Text(
+                                              shift.checkInHm,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: isSubstitution ? Colors.orange.shade700
+                                                    : isMe ? const Color(0xFF1565C0) : Colors.green.shade700,
+                                              ),
+                                            ),
+                                            if (isSubstitution && originalWorkerName != null)
+                                              Text('←$originalWorkerName', style: TextStyle(fontSize: 6, color: Colors.orange.shade400), overflow: TextOverflow.ellipsis),
+                                          ],
                                         )
-                                      : const Text('-', style: TextStyle(fontSize: 10, color: Colors.black12)),
+                                      : (isSubstitutedOut
+                                          ? const Text('휴무', style: TextStyle(fontSize: 8, color: Colors.grey, fontWeight: FontWeight.w600))
+                                          : const Text('-', style: TextStyle(fontSize: 10, color: Colors.black12))),
                                 ),
                               ),
                             );
@@ -500,57 +553,42 @@ class _AlbaSchedulePageState extends State<AlbaSchedulePage> with SingleTickerPr
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('사장님 승인 대기'),
-            content: Text('대근 결과 주간 근무가 15시간 이상이 되어 사장님께 승인 요청을 보냈습니다.\n\n대상자: $pName'),
+            content: Text('사장님께 승인 요청을 보냈습니다.\n\n대상자: $pName'),
             actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('확인'))],
           ),
         );
       }
     } else {
-      // ────────── CASE 1: 즉시 승인 및 근무표 수정 ──────────
-      final batch = _db.batch();
-      
-      // A. 원 근무자(Requester)의 근무 삭제 (또는 대근됨 표시)
-      batch.delete(_db.collection('stores').doc(widget.storeId).collection('workers').doc(requesterId).collection('rosterDays').doc(dateKey));
-      
-      // B. 대근 희망자(Proposer)의 근무표에 추가
-      batch.set(
-        _db.collection('stores').doc(widget.storeId).collection('workers').doc(proposerId).collection('rosterDays').doc(dateKey),
-        {
-          'workerId': proposerId,
-          'storeId': widget.storeId,
-          'checkInTime': shift.checkInHm,
-          'checkOutTime': shift.checkOutHm,
-          'isSubstitution': true,
-          'originalWorkerName': rName,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }
-      );
-      
-      // C. 기록 저장
-      batch.set(_db.collection('substitutions').doc(subId), {
+      // ────────── CASE 1: 대근 요청 생성 (rosterDays는 사장님/서버가 처리) ──────────
+      // 보안상 클라이언트가 다른 직원의 rosterDays를 직접 수정하지 않도록
+      // substitutions 요청만 생성하고, 사장님 승인 또는 Cloud Function이 처리
+      await _db.collection('substitutions').doc(subId).set({
         'id': subId,
         'storeId': widget.storeId,
         'requesterId': requesterId,
         'proposerId': proposerId,
+        'requesterName': rName,
+        'proposerName': pName,
         'date': dateKey,
-        'status': 'approved',
-        'isAutoApproved': true,
-        'approvedAt': FieldValue.serverTimestamp(),
+        'startHm': shift.checkInHm,
+        'endHm': shift.checkOutHm,
+        'status': 'pending_auto', // 법적 문제 없음 → 사장님 자동 승인 대기
+        'over15Hours': false,
+        'isAutoApproved': false,
+        'createdAt': FieldValue.serverTimestamp(),
       });
-      
-      await batch.commit();
 
-      // D. 사후 알림 (CASE 4)
       await _db.collection('stores').doc(widget.storeId).collection('notifications').add({
-        'type': 'substitution_completed',
-        'title': '✅ 대근 확정 알림',
-        'message': '$rName님의 근무가 $pName님으로 변경되었습니다. (합의하에 즉시 반영됨)',
+        'type': 'substitution_auto_request',
+        'title': '🔄 대근 확정 요청',
+        'message': '$rName → $pName 대근 신청 (법적 제한 내). 사장님 확인 후 근무표에 반영됩니다.',
+        'substitutionId': subId,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ 대근이 즉시 확정되어 근무표가 수정되었습니다.')),
+          const SnackBar(content: Text('대근 요청이 접수되었습니다. 사장님 확인 후 근무표에 반영됩니다.')),
         );
       }
     }

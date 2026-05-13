@@ -1,4 +1,19 @@
-# 알바급여정석 사장님용 사용 설명서
+<style>
+  @page { margin: 10mm; }
+  body { font-size: 11px; line-height: 1.35; }
+  h1 { font-size: 18px; margin-top: 10px; margin-bottom: 8px; }
+  h2 { font-size: 16px; margin-top: 10px; margin-bottom: 8px; }
+  h3 { font-size: 13px; margin-top: 8px; margin-bottom: 4px; }
+  p, ul, li { margin-top: 2px; margin-bottom: 2px; }
+  hr { margin: 10px 0; }
+  img { max-height: 240px; width: auto !important; margin-top: 2px !important; margin-bottom: 2px !important; }
+  div { margin-bottom: 5px !important; margin-top: 5px !important; }
+</style>
+
+<div style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding: 30px 20px; text-align: center; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+  <h1 style="color: white; margin: 0; font-size: 26px; font-weight: bold; letter-spacing: -0.5px; border-bottom: none;">📘 알바급여정석 사장님용 사용 설명서</h1>
+  <p style="color: #cbd5e1; margin-top: 8px; font-size: 13px; font-weight: 500;">매장 노무 관리부터 급여 정산까지, 사장님 앱 완벽 마스터 가이드</p>
+</div>
 
 본 설명서는 알바급여정석 사장님 앱의 기본 사용법과 주요 기능들을 스크린샷과 함께 안내합니다.
 
@@ -11,9 +26,11 @@
 앱을 처음 실행하시면 만나게 되는 화면입니다. 
 알바급여정석은 별도의 복잡한 회원가입 양식 없이, 기존에 사용하시던 소셜 계정으로 3초 만에 간편하게 로그인하실 수 있습니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/login_screen.png" alt="로그인 화면" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 35%; display: flex; justify-content: center;">
+  <img src="images/login_screen.png" alt="로그인 화면" style="width: 90%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 필수 약관 동의
 소셜 로그인 버튼을 누르기 전, 개인정보보호법에 의거한 **[서비스 이용약관 및 개인정보 처리방침]** 확인이 우선되어야 합니다.
@@ -24,6 +41,9 @@
 ### 🔹 간편 로그인 방식 지원
 - **Google로 로그인**: 구글 계정을 통해 즉시 연동됩니다.
 - **Apple로 로그인**: 애플 기기 및 안드로이드 기기에서도 애플 ID로 로그인이 가능합니다.
+
+</div>
+</div>
 
 ---
 
@@ -37,10 +57,12 @@
 
 로그인 후 가장 먼저 해야 할 일은 사장님의 '매장 정보'를 등록하는 것입니다. 이 정보는 추후 근로계약서, 임금명세서 등 각종 노무 서류 생성 시 자동으로 입력됩니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/store_setup_top.png" alt="사업장 정보 상단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
-  <img src="images/store_setup_bottom.png" alt="사업장 정보 하단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 45%; display: flex; justify-content: center; gap: 10px;">
+  <img src="images/store_setup_top.png" alt="사업장 정보 상단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+  <img src="images/store_setup_bottom.png" alt="사업장 정보 하단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 주요 입력 항목 설명
 정확한 급여 계산 및 컴플라이언스를 위해 다음 항목들을 신중히 선택해 주세요:
@@ -55,6 +77,9 @@
 3. **주휴 수당 표시 여부**
    - 사장님 전용 대시보드에서 주휴 수당 내역을 숨길지, 보여줄지 취향에 따라 선택할 수 있습니다. 
    - 끄더라도 급여 정산 화면에 들어가면 정상 작동 및 내역이 유지됩니다.
+
+</div>
+</div>
 
 > [!IMPORTANT]
 > **사업자 등록증 촬영 및 정보 연동**
@@ -100,15 +125,20 @@
 직원 등록 단계의 마지막인 **초대코드 발송 화면**입니다.
 가입한 직원이 출퇴근을 기록하거나 본인의 급여 연동을 받으려면, 이 단계에서 발송하는 카카오톡 초대 메시지가 꼭 필요합니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/screen_5.png" alt="직원 초대 및 코드 전송" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 35%; display: flex; justify-content: center;">
+  <img src="images/screen_5.png" alt="직원 초대 및 코드 전송" style="width: 90%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 초대 링크 전송 방법
 - 화면 하단의 **`카카오톡으로 초대장 보내기`** 버튼을 누르시면, 직원에게 맞춤형 초대장(매장명, 초대 모바일 웹 주소, 비밀번호 포함)이 자동으로 카카오톡 메시지에 꽂힙니다.
 - 만약 직원이 카카오톡을 쓰지 않는다면, 그 아래의 **`문자로 초대장 보내기`**를 눌러 SMS 메시지로 전송할 수도 있습니다.
 - 💡 **알바 앱 (Alba Web)**
   직원은 별도의 앱스토어 다운로드 없이, 전달받은 링크를 누르기만 하면 즉시 모바일 웹앱 환경에서 휴대폰 본인 인증 후 알바 전용 화면을 볼 수 있습니다.
+
+</div>
+</div>
 
 ---
 
@@ -119,49 +149,69 @@
 ### ① 근로자 명부 작성
 근로기준법 제41조에 따라 모든 사업장에 비치해야 하는 **'근로자 명부'**입니다. 휴대폰 화면이 작아 전체가 안 보일 경우 아래로 스크롤하여 모든 항목을 확인할 수 있습니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/worker_registry.png" alt="근로자 명부 상단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
-  <img src="images/worker_registry_2.png" alt="근로자 명부 하단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 45%; display: flex; justify-content: center; gap: 10px;">
+  <img src="images/worker_registry.png" alt="근로자 명부 상단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+  <img src="images/worker_registry_2.png" alt="근로자 명부 하단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 - 직원의 이름, 입사일, 전화번호, 근무 요일 등 최초 등록한 기초 이력 데이터가 원터치로 연동됩니다.
 - `[내보내기]`를 통해 문서 형태로 보관해 두시면 완벽한 법적 대비가 가능합니다.
+
+</div>
+</div>
 
 
 ### ② 채용/법정 체크리스트
 신규 파트타이머를 채용할 때 점주님이 실수로 누락하기 쉬운 필수 준수 사항들을 리마인드 해주고 점검할 수 있는 서류입니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/hiring_checklist.png" alt="채용/법정 체크리스트 상단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
-  <img src="images/hiring_checklist_2.png" alt="채용/법정 체크리스트 하단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 45%; display: flex; justify-content: center; gap: 10px;">
+  <img src="images/hiring_checklist.png" alt="채용/법정 체크리스트 상단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+  <img src="images/hiring_checklist_2.png" alt="채용/법정 체크리스트 하단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 - 근무 전 교육, 안전 수칙 안내, 필수 정보 고지 등의 내역을 확인하고 체크하여 보관할 수 있습니다.
 - 문서 하단까지 점검을 마치면 사장님이 법적 절차를 완벽히 정석대로 밟았다는 훌륭한 소명 자료가 됩니다.
+
+</div>
+</div>
 
 
 ### ③ 야간 및 휴일근로 동의서
 근로계약서에 앞서, 밤 10시부터 새벽 6시 사이의 근로나, 휴일에 근로시킬 수 있다는 사전 동의를 받는 필수 문서입니다. (미작성 시 분쟁 소지 방지)
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/night_consent.png" alt="야간/휴일근로 동의서 상단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
-  <img src="images/night_consent_2.png" alt="야간/휴일근로 동의서 하단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 45%; display: flex; justify-content: center; gap: 10px;">
+  <img src="images/night_consent.png" alt="야간/휴일근로 동의서 상단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+  <img src="images/night_consent_2.png" alt="야간/휴일근로 동의서 하단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 - 야간 근무가 포함된 직원이라면 반드시 교부해야 하는 서류입니다.
 - 서명 란에 직원과 사장님의 서명이 전자적으로 입력되면 대시보드 서류 보관함에 즉시 영구 저장되어 언제든 증빙자료로 사용할 수 있습니다.
+
+</div>
+</div>
 
 
 ### ④ 전자 근로계약서 자동 생성
 노무 문서 중 가장 중요한 **표준 근로계약서**입니다. 스마트폰의 작은 화면에 맞춰 최적화된 UI로 깔끔하게 제공됩니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/labor_contract.png" alt="근로계약서 상단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
-  <img src="images/labor_contract_2.png" alt="근로계약서 하단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 45%; display: flex; justify-content: center; gap: 10px;">
+  <img src="images/labor_contract.png" alt="근로계약서 상단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+  <img src="images/labor_contract_2.png" alt="근로계약서 하단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 - **자동 완성 항목**: 계약 기간, 근무 장소, 업무 내용, 소정근로시간, 임금(시급/주휴수당), 연차유급휴가 규정 등 필수 기재 사항이 앞서 입력한 데이터를 바탕으로 오차 없이 조립됩니다.
 - **교부 의무 완벽 준수**: 서명 완료된 계약서는 사장님과 알바생 양쪽 앱에 보관되며 법정 의무 보존 기간(퇴사 후 3년)까지 안전하게 관리됩니다.
+
+</div>
+</div>
 
 ---
 
@@ -169,9 +219,11 @@
 
 사장님 앱에서 발송한 근로계약서 및 각종 동의서를 직원이 어떻게 전달받고 서명하는지 확인하는 파트너(직원) 전용 화면입니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/alba_web_doc.png" alt="알바 파트너 서류 교부 화면" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 35%; display: flex; justify-content: center;">
+  <img src="images/alba_web_doc.png" alt="알바 파트너 서류 교부 화면" style="width: 90%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 비대면 전자 서명 시스템
 - 직원은 URL(알바웹)을 누른 뒤 복잡한 가입 없이 휴대폰 인증만으로 전용 알바 대시보드에 진입합니다.
@@ -179,24 +231,27 @@
 - 직원은 내용을 꼼꼼히 확인하고, 자신의 **전자 서명(스마트폰 터치 사인)**을 진행합니다.
 - 직원이 서명을 완료하는 즉시, 사장님 앱의 해당 서류 상태가 [서명 완료]로 자동 업데이트되며 비대면 교부 의무가 100% 충족됩니다!
 
+</div>
+</div>
+
 <br>
 <br>
 
-# [ 제2부. 앱 핵심 화면 구성 및 일상 관리 ]
+<h1 style="page-break-before: always; margin-top: 40px; padding-top: 20px;">[ 제2부. 앱 핵심 화면 구성 및 일상 관리 ]</h1>
 
 ## 7. 메인 홈 (대시보드)
 
 로그인 후 매일 가장 먼저 확인하시게 될 사장님 앱의 **핵심 관제탑(Dashboard)** 화면입니다. 스마트폰 화면을 좌우로 스와이프하여 여러 개의 브리핑 카드와 급여 리포트까지 연결해서 확인하실 수 있습니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/dashboard.png" alt="메인 대시보드 화면 1" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 3px;" />
-  <img src="images/dashboard_2.png" alt="메인 대시보드 화면 2" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 3px;" />
-  <img src="images/dashboard_3.png" alt="메인 대시보드 화면 3" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 3px;" />
+<div style="page-break-inside: avoid; text-align: center; margin-bottom: 10px;">
+  <img src="images/dashboard.png" alt="메인 대시보드 화면 1" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 2px;" />
+  <img src="images/dashboard_2.png" alt="메인 대시보드 화면 2" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 2px;" />
+  <img src="images/dashboard_3.png" alt="메인 대시보드 화면 3" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 2px;" />
 </div>
-
-<div style="page-break-inside: avoid; text-align: center; margin-top: 15px;">
-  <img src="images/payroll_report.png" alt="대시보드 4 - 급여 리포트 상단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
-  <img src="images/payroll_report_2.png" alt="대시보드 4 - 급여 리포트 하단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
+<div style="page-break-inside: avoid; text-align: center; margin-bottom: 20px;">
+  <img src="images/payroll_detail.png" alt="급여 리포트 및 상세보기 1" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 2px;" />
+  <img src="images/payroll_detail_2.png" alt="급여 리포트 및 상세보기 2" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 2px;" />
+  <img src="images/payroll_detail_3.png" alt="급여 리포트 및 상세보기 3" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 2px;" />
 </div>
 
 ### 🔹 핵심 요약 카드 (상단부, 좌/우 스와이프)
@@ -213,38 +268,43 @@
 
 ---
 
-## 8. 급여 리포트 및 상세 내역 관리
+<h2 style="page-break-before: always;">8. 급여 리포트 및 상세 내역 관리</h2>
 
 대시보드의 브리핑 카드에서 더 깊게 들어가면 볼 수 있는 메뉴로, 사장님들의 가장 큰 페인포인트를 완벽하게 해결해 주는 메뉴입니다. 아래로 스크롤하여 모든 세부 항목의 명세 내역을 확인할 수 있습니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/payroll_detail.png" alt="급여 리포트 및 상세보기 1" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 3px;" />
-  <img src="images/payroll_detail_2.png" alt="급여 리포트 및 상세보기 2" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 3px;" />
-  <img src="images/payroll_detail_3.png" alt="급여 리포트 및 상세보기 3" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 3px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 45%; display: flex; justify-content: center; gap: 10px;">
+  <img src="images/payroll_report.png" alt="대시보드 4 - 급여 리포트 상단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+  <img src="images/payroll_report_2.png" alt="대시보드 4 - 급여 리포트 하단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 자동화된 법정 수당 계산
 - 직원의 실제 출퇴근 기록을 바탕으로 **주휴수당, 연장/야간/휴일근로 수당**이 한 치의 오차 없이 자동 산출됩니다.
 - 추가 지급액이나 차감액이 있다면 상세 내역 화면에서 손쉽게 편집(조정)할 수 있습니다.
 - 4대 보험 공제, 소득세 원천징수 등 복잡한 세금 계산도 시스템이 알아서 공제해 줍니다. 급여 명세서 생성 버튼 한 번이면 끝납니다!
 
+</div>
+</div>
+
 <br>
 <br>
 
-# [ 제3부. 직원용 알바 웹(Alba Web) 활용 가이드 ]
+<h1 style="page-break-before: always; margin-top: 40px; padding-top: 20px;">[ 제3부. 직원용 알바 웹(Alba Web) 활용 가이드 ]</h1>
 
 ## 9. 알바 전용 대시보드 및 실시간 출퇴근
 
 직원들이 자신의 휴대폰에서 링크를 눌러 가장 자주 접하게 되는 모바일 웹 기반 메인 화면입니다. 사장님 앱과 실시간으로 연동되어 투명하고 정확한 근무 관리를 지원합니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/alba_web_dashboard.png" alt="알바 웹 대시보드 화면" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 35%; display: flex; justify-content: center;">
+  <img src="images/alba_web_dashboard.png" alt="알바 웹 대시보드 화면" style="width: 90%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 간편한 QR 카메라 출퇴근 기록
 - 매장에 비치된 알바급여정석 전용 QR코드를 직원 폰의 **[카메라로 스캔(찍기)]**만 하면 복잡한 조작 없이 단 1초 만에 **출근하기/퇴근하기** 처리가 완료됩니다!
 - 출퇴근 처리되는 즉시 사장님 앱의 메인 대시보드에도 실시간으로 출근 상태와 타이머가 연동되어 분쟁의 소지가 원천 차단됩니다.
-
 
 ### 🔹 이번 달 누적 급여 모니터링
 - 직원이 자신이 일한 시간만큼, 주휴수당 및 세금을 포함한 예상 세후 급여를 직관적으로 확인할 수 있습니다.
@@ -253,16 +313,21 @@
 ### 🔹 내 스케줄 간편 조회
 - 곧 다가올 본인의 다음 출근 요일과 스케줄(출퇴근 예정 시간)을 첫 화면에서 놓치지 않고 바로 확인할 수 있습니다. 미리 휴무 신청이나 대타 관리도 이 화면에서 연결됩니다.
 
+</div>
+</div>
+
 ---
 
 ## 10. 내 근무표 및 스케줄 확인
 
 직원이 본인의 월간/주간 근무 일정을 달력 형태로 한 눈에 파악할 수 있는 화면입니다. 아래로 스크롤하여 더 많은 상세 일정을 조회할 수 있습니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/alba_web_schedule.png" alt="알바 웹 근무표 화면 상단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
-  <img src="images/alba_web_schedule_2.png" alt="알바 웹 근무표 화면 하단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 45%; display: flex; justify-content: center; gap: 10px;">
+  <img src="images/alba_web_schedule.png" alt="알바 웹 근무표 화면 상단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+  <img src="images/alba_web_schedule_2.png" alt="알바 웹 근무표 화면 하단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 캘린더 기반 일정 관리
 - 본인이 출근해야 하는 날짜와 시간이 달력에 예쁘게 마킹되어 있어, 개인 일정(학교, 학원 등)과 알바 스케줄을 헷갈리지 않고 조율할 수 있습니다.
@@ -271,16 +336,21 @@
 ### 🔹 대타 및 휴무 신청 (예정)
 - 피치 못할 사정으로 결근해야 할 때, 이 화면에서 사장님께 직접 '휴무 신청'을 하거나 동료들에게 '대타 요청'을 올릴 수 있도록 스케줄링의 편의성을 극대화했습니다. (사장님 승인 후 최종 반영)
 
+</div>
+</div>
+
 ---
 
 ## 11. 내 급여 상세 내역 확인
 
 직원이 단순히 예상 급여액만 보는 것을 넘어, 자신이 이번 달 일한 모든 내역과 공제된 세금 등을 사장님과 100% 동일한 기준으로 확인할 수 있는 투명한 급여 조회 화면입니다. 아래로 스크롤하여 더 많은 상세 계산법을 확인할 수 있습니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/alba_web_payroll.png" alt="알바 웹 급여 내역 화면 상단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
-  <img src="images/alba_web_payroll_2.png" alt="알바 웹 급여 내역 화면 하단" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px; margin: 0 5px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 45%; display: flex; justify-content: center; gap: 10px;">
+  <img src="images/alba_web_payroll.png" alt="알바 웹 급여 내역 화면 상단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+  <img src="images/alba_web_payroll_2.png" alt="알바 웹 급여 내역 화면 하단" style="width: 48%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 투명한 급여 명세 및 수당 내역
 - 내가 몇 시간 일해야 받을 수 있는 기본급은 물론, 15시간 이상 근무하여 발생한 **주휴수당**이나 야간/연장 **가산수당**까지 상세하게 풀어서 보여줍니다.
@@ -289,19 +359,27 @@
 ### 🔹 4대 보험 및 세금 공제 확인
 - 내가 내야 하는 4대 보험 원천징수액이나 프리랜서 소득세(3.3%)가 얼마인지 정확히 명시되어, "이 금액이 왜 깎였죠?"라는 직원의 문의를 원천봉쇄합니다.
 
+</div>
+</div>
+
 ---
 
 ## 12. 공지사항 및 업무별 교육 매뉴얼
 
 알바생들이 업무에 투입되기 전 혹은 근무 중에 수시로 참고할 수 있는 사내 게시판/업무 가이드 화면입니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/alba_web_manual.png" alt="알바 웹 공지/업무 매뉴얼" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 35%; display: flex; justify-content: center;">
+  <img src="images/alba_web_manual.png" alt="알바 웹 공지/업무 매뉴얼" style="width: 90%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 꼼꼼한 업무 온보딩 (Onboarding)
 - 매장의 인사말부터 시작해, 포스(POS)기 사용법, 재료 준비 방법 등 사장님이 올려둔 **'매장 맞춤형 업무 매뉴얼 및 동영상/이미지 가이드'**를 열람할 수 있습니다.
 - 알바생이 바뀔 때마다 똑같은 설명을 반복하던 사장님의 번거로움을 획기적으로 줄여주고, 신규 직원의 빠른 적응을 돕습니다.
+
+</div>
+</div>
 
 ---
 
@@ -309,10 +387,15 @@
 
 직원이 본인과 관련된 모든 법정 노동 서류를 언제든 열람할 수 있도록 제공되는 안전한 전자 문서고(Vault)입니다.
 
-<div style="page-break-inside: avoid; text-align: center;">
-  <img src="images/alba_web_vault.png" alt="알바 웹 서류 보관함" style="width: 30%; border: 1px solid #e0e0e0; border-radius: 8px;" />
+<div style="display: flex; gap: 20px; align-items: flex-start; page-break-inside: avoid; margin-bottom: 20px;">
+<div style="flex: 0 0 35%; display: flex; justify-content: center;">
+  <img src="images/alba_web_vault.png" alt="알바 웹 서류 보관함" style="width: 90%; border: 1px solid #e0e0e0; border-radius: 8px;" />
 </div>
+<div style="flex: 1;">
 
 ### 🔹 안전한 계약 문서 열람
 - 입사 시 작성했던 '근로계약서' 및 '휴일/야간 근로 동의서' 원본을 분실 걱정 없이 언제든지 꺼내 볼 수 있습니다.
 - 사장님이 직접 서명하고 인증한 문서가 반영구적으로 저장되므로 알바생들이 신뢰감을 갖고 일할 수 있습니다.
+
+</div>
+</div>

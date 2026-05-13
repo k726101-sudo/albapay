@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>알바급여정석 - 임원 브리핑 (컴포즈커피 & 쿠팡이츠)</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --brand-blue: #1A56DA;
+            --brand-dark: #0F172A;
+            --compose-yellow: #FACC15;
+            --coupang-blue: #0ea5e9;
+            --text-main: #1E293B;
+            --text-light: #64748B;
+            --bg-gray: #F8FAFC;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Pretendard', sans-serif;
+        }
+
+        body {
+            background-color: #ffffff;
+            color: var(--text-main);
+            line-height: 1.6;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--brand-dark) 0%, #1e1b4b 100%);
+            color: white;
+            padding: 5rem 2rem;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            letter-spacing: -0.02em;
+        }
+
+        header p {
+            font-size: 1.25rem;
+            color: #94A3B8;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+        }
+
+        .section-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--brand-dark);
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 2px solid #E2E8F0;
+            padding-bottom: 1rem;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background: var(--bg-gray);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid #E2E8F0;
+            transition: transform 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        }
+
+        .card-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--brand-dark);
+        }
+
+        .card-text {
+            color: var(--text-light);
+            font-size: 1rem;
+        }
+
+        /* Specific Highlights */
+        .highlight-compose { color: #b45309; font-weight: 700; }
+        .highlight-coupang { color: var(--coupang-blue); font-weight: 700; }
+
+        .tech-stack {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+
+        .tech-badge {
+            background: #E2E8F0;
+            color: #334155;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .pitch-box {
+            background: #FFFBEB;
+            border-left: 4px solid var(--compose-yellow);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+
+        .pitch-box.coupang {
+            background: #F0F9FF;
+            border-left: 4px solid var(--coupang-blue);
+        }
+
+        @media print {
+            body { background: white; }
+            header { padding: 3rem 1rem; color: black; background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
+            header h1 { color: #000; }
+            header p { color: #333; }
+            .card { break-inside: avoid; border: 1px solid #cbd5e1; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>알바급여정석 B2B 제안서</h1>
+        <p>전국 단위 프랜차이즈 및 플랫폼 긱 워커를 위한 가장 안전하고 스마트한 차세대 HR·급여 연동 솔루션</p>
+    </header>
+
+    <div class="container">
+
+        <!-- 도입부 -->
+        <h2 class="section-title"><i class="fas fa-bullseye" style="color:var(--brand-blue)"></i> Executive Summary (솔루션 개요)</h2>
+        <p style="font-size: 1.1rem; color: var(--text-light); margin-bottom: 3rem; line-height: 1.8;">
+            <b>알바급여정석</b>은 매장의 사장님과 단기 근로자(알바생, 긱 워커)를 <strong>앱 하나로 완벽하게 묶어주는 통합 솔루션</strong>입니다. 수기 근로계약서 마찰, 복잡한 주휴수당 계산, 가짜 출퇴근(대리 출결)과 같은 현장의 치명적인 페인포인트(Pain-point)를 첨단 모바일 기술과 생체인증으로 완벽히 통제합니다.
+        </p>
+
+        <!-- 컴포즈 커피 타겟 셀링 포인트 -->
+        <h2 class="section-title"><i class="fas fa-coffee" style="color:#b45309"></i> 매장 운영 효율 극대화 (for <span class="highlight-compose">컴포즈커피</span>)</h2>
+        <div class="pitch-box">
+            <strong>컴포즈커피 가맹점주들의 핵심 고민:</strong> "알바생 이직률이 높아 매번 <strong>근로계약서 쓰기도 벅차고, 주휴수당이나 4대보험 계산에서 항상 노무 분쟁</strong>이 발생합니다."
+        </div>
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-icon" style="color: #b45309"><i class="fas fa-file-signature"></i></div>
+                <div class="card-title">100% 비대면 전자 노무 서류</div>
+                <div class="card-text">
+                    단기 알바 채용 시, 사장님이 폰으로 입력하면 <b>표준 근로계약서, 야간근로 동의서가 즉석에서 생성</b>됩니다. 알바생이 본인 스마트폰에서 생체인증 후 터치 사인만 하면 교부 의무가 완벽히 충족됩니다.
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-icon" style="color: #b45309"><i class="fas fa-calculator"></i></div>
+                <div class="card-title">1원 단위 무결점 급여·수당 자동화</div>
+                <div class="card-text">
+                    주휴수당(주 15시간 이상), 심야 가산수당, 연장수당을 시스템이 실시간 출퇴근 기반으로 자동 판독합니다. 점주님이 별도 엑셀 작업을 할 필요 없이 프리랜서 소득세(3.3%) 혹은 4대보험 공제까지 자동 차감해 줍니다.
+                </div>
+            </div>
+        </div>
+
+        <!-- 쿠팡이츠 타겟 셀링 포인트 -->
+        <h2 class="section-title"><i class="fas fa-handshake" style="color:var(--coupang-blue)"></i> 자영업자 대상 마케팅 및 상생 협력 (for <span class="highlight-coupang">쿠팡이츠</span>)</h2>
+        <div class="pitch-box coupang">
+            <strong>쿠팡이츠/배달 플랫폼과의 상생 포인트:</strong> "입점 파트너(가맹점주)들이 가장 스트레스 받는 '알바 관리'의 고통을 덜어주어, <strong>음식 품질 향상과 배달 플랫폼(쿠팡이츠) 매출 집중도</strong>를 비약적으로 높여줍니다."
+        </div>
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-icon" style="color: var(--coupang-blue)"><i class="fas fa-store"></i></div>
+                <div class="card-title">입점 파트너를 위한 강력한 베네핏</div>
+                <div class="card-text">
+                    쿠팡이츠에 입점한 자영업자 분들을 대상으로 '알바급여정석'을 제휴 프로모션 형태로 제공해 보세요. 골치 아픈 인사·급여 관리를 덜어주는 것은 점주들에게 <b>플랫폼에 대한 충성도(Lock-in)를 높이는 최고의 혜택</b>이 됩니다.
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-icon" style="color: var(--coupang-blue)"><i class="fas fa-chart-line"></i></div>
+                <div class="card-title">양방향 마케팅 시너지(Synergy)</div>
+                <div class="card-text">
+                    수기 관리에 뺏기던 점주님의 시간이 곧 본업(요리/서비스)으로 환원됩니다. <b>알바급여정석 앱 내부 배너를 통한 공동 마케팅(공지사항, 점주 이벤트) 연계</b>로, 쿠팡이츠 파트너 모집 및 활성화에 다이렉트 홍보 채널로 활용하실 수 있습니다.
+                </div>
+            </div>
+        </div>
+
+        <!-- 기술적 성취 (전문적인 부분) -->
+        <h2 class="section-title"><i class="fas fa-code"></i> Technical Highlights (기술 및 아키텍처)</h2>
+        <div class="card" style="margin-bottom: 2rem;">
+            <div class="card-title">1. 통합된 Single Codebase (Flutter)</div>
+            <div class="card-text">
+                과거 사장용 웹과 직원용 앱으로 나뉘어 파편화되었던 시스템을, 하나의 모바일 네이티브 앱(Super App)으로 통합 병합했습니다. 플랫폼 유지보수 비용을 50% 절감하고, 안드로이드와 iOS 동시 대응 및 실시간 푸시(Push) 인프라를 일원화했습니다.
+            </div>
+            <div class="tech-stack">
+                <span class="tech-badge">Flutter</span>
+                <span class="tech-badge">Dart</span>
+                <span class="tech-badge">Cross-Platform</span>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-title">2. 하드웨어 기반 생체인증 보안</div>
+                <div class="card-text">
+                    단순 PIN 번호가 아닌, 기기 본연의 보안 영역(TrustZone/Secure Enclave)을 활용하는 <code>local_auth</code> 모듈을 탑재했습니다. 출결 마킹, 계약서 서명 등 법적 트랜잭션이 발생할 때마다 <b>Non-Repudiation(부인 방지) 알고리즘</b>으로 작용합니다.
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">3. Firebase 기반 실시간 동기화</div>
+                <div class="card-text">
+                    직원이 출근 버튼을 누르는 순간, 서버 폴링 없이 사장님 스마트폰 대시보드 타이머가 밀리초(ms) 단위로 즉각 연동되어 돌아갑니다. Firestore의 실시간 리스너(Listener)를 활용해 대규모 분산 스토어 환경에서도 트래픽 병목 없이 스케줄 데이터가 동기화됩니다.
+                </div>
+            </div>
+        </div>
+
+        <hr style="border: 0; border-bottom: 1px solid #E2E8F0; margin: 3rem 0;">
+        
+        <p style="text-align: center; color: var(--text-light); font-weight: 500;">
+            알바급여정석은 프랜차이즈 점주의 <b>[관리 리소스]</b>를 제로로 수렴하게 만들고,
+            플랫폼 종사자의 <b>[정산 투명성]</b>을 보장하는 최상의 파트너가 될 것입니다.
+        </p>
+    </div>
+
+</body>
+</html>

@@ -12,11 +12,12 @@ void main() {
       final attendances = <Attendance>[];
       // Simulate perfect attendance for 5 months
       final settlementPoint = DateTime(2024, 7, 1);
-      
+
       final summary = PayrollCalculator.calculateAnnualLeaveSummary(
         joinDate: joinDate,
         endDate: null,
-        allAttendances: attendances, // Empty will be treated as perfect if it's virtual/auto-passed
+        allAttendances:
+            attendances, // Empty will be treated as perfect if it's virtual/auto-passed
         scheduledWorkDays: scheduledDays,
         isFiveOrMore: true,
         settlementPoint: settlementPoint,
@@ -49,7 +50,7 @@ void main() {
 
       // 11 (max for <1yr) + 15 (at 1yr) = 26.0
       expect(summary.totalGenerated, 26.0);
-      
+
       // Severance pay check (Scenario 2 sub-point)
       final exitSettlement = PayrollCalculator.calculateExitSettlement(
         workerName: 'Tester',
@@ -78,35 +79,47 @@ void main() {
         joinDate: joinDate,
         scheduledWorkDays: scheduledDays,
         mealAllowance: 300000.0, // Scenario: 300k input (should cap at 200k)
+        mealTaxExempt: true,
+        deductNationalPension: true,
+        deductHealthInsurance: true,
+        deductEmploymentInsurance: true,
+        weeklyHolidayDay: 0,
+        manualWeeklyHolidayApproval: false,
       );
 
       // Simulate 5 days * 9h = 45h
       final result = PayrollCalculator.calculate(
         workerData: workerData,
-        shifts: List.generate(5, (i) => Attendance(
-          id: '$i', staffId: 'w1', storeId: 's1',
-          clockIn: DateTime(2024, 2, 5 + i, 9), clockOut: DateTime(2024, 2, 5 + i, 18),
-          type: AttendanceType.web,
-        )),
+        shifts: List.generate(
+          5,
+          (i) => Attendance(
+            id: '$i',
+            staffId: 'w1',
+            storeId: 's1',
+            clockIn: DateTime(2024, 2, 5 + i, 9),
+            clockOut: DateTime(2024, 2, 5 + i, 19), // 10h stay -> 1h break -> 9h pure labor
+            type: AttendanceType.web,
+          ),
+        ),
         periodStart: DateTime(2024, 2, 5),
         periodEnd: DateTime(2024, 2, 11),
         hourlyRate: 10000.0,
         isFiveOrMore: false,
       );
 
-      // totalPay = 45h * 10k = 450,000 KRW
-      expect(result.totalPay, 450000.0);
+      // totalPay = 45h * 10k = 450,000 KRW + 주휴수당 80,000 KRW = 530,000 KRW
+      expect(result.totalPay, 530000.0);
       expect(result.mealNonTaxable, 200000.0); // Capped at 200k
-      expect(result.taxableWage, 250000.0); // 450k - 200k = 250k
-      expect(result.insuranceDeduction, 250000.0 * 0.094); // 23,500 KRW
-      expect(result.netPay, 450000.0 - 23500.0); // 426,500 KRW
+      expect(result.taxableWage, 330000.0); // 530k - 200k = 330k
+      expect(result.insuranceDeduction, 330000.0 * 0.094); // 31,020 KRW
+      expect(result.netPay, 530000.0 - 31020.0); // 498,980 KRW
     });
 
     // 📈 [시나리오 4] '가산 연차' 테스트 (입사 3년 차 이상)
     test('Scenario 4: Long-term Additional Leave (+1 day every 2 years)', () {
       final joinDateLong = DateTime(2021, 1, 30);
       final checkDate = DateTime(2024, 1, 31); // 3 full years passed
-      
+
       final summary = PayrollCalculator.calculateAnnualLeaveSummary(
         joinDate: joinDateLong,
         endDate: null,
@@ -163,7 +176,10 @@ void main() {
       );
       // Jan 30 -> Feb 29 (passed). Accrued = 1.0.
       expect(exitSettlement.remainingLeaveDays, 1.0);
-      expect(exitSettlement.annualLeavePayout, 8.0 * hourlyRate); // 1 day * 8h * 10k
+      expect(
+        exitSettlement.annualLeavePayout,
+        8.0 * hourlyRate,
+      ); // 1 day * 8h * 10k
     });
   });
 }

@@ -18,6 +18,7 @@ import '../services/store_cache_service.dart';
 import '../services/worker_service.dart';
 import '../utils/standing_calculator.dart';
 import '../widgets/standing_change_alert.dart';
+import '../widgets/compliance_alert_banner.dart';
 import 'main_tab_contents.dart';
 import 'notice_education_tab_screen.dart';
 import 'notice_list_screen.dart';
@@ -27,6 +28,7 @@ import 'staff/add_staff_screen.dart';
 import 'health/health_certificate_alert_management_screen.dart';
 import '../utils/renewal_engine.dart';
 import 'documents/contract_renewal_screen.dart';
+import 'alba/alba_main_screen.dart';
 
 /// 출근 승인 시 급여 반영 기준 (pending 전용)
 enum _PendingClockInApprove { payrollScheduled, actualPunch }
@@ -77,6 +79,18 @@ class _MainScreenState extends State<MainScreen> {
   /// Page inside PageView: 0 dashboard, 1 schedule.
   int _pageViewIndex = 0;
 
+  /// 체험모드 여부 (알바 전환 버튼 표시용)
+  bool _isDemo = false;
+  String _demoStoreId = '';
+
+  /// 온보딩 가이드
+  final GlobalKey _fabKey = GlobalKey();
+  final GlobalKey _dashboardTabKey = GlobalKey();
+  final GlobalKey _staffTabKey = GlobalKey();
+  final GlobalKey _docsTabKey = GlobalKey();
+  final GlobalKey _settingsTabKey = GlobalKey();
+  OverlayEntry? _onboardingOverlay;
+
   void _goToSettingsTab() {
     setState(() => _bottomIndex = 4); // Settings is now at index 4 due to Notice/Education tab
   }
@@ -115,6 +129,8 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await UserGuidePopup.showIfNeeded(context, GuideType.boss);
+      
       // 로그인 직후·계정 전환 후: 매장 Hive + 직원 Firestore + 실시간 구독을 현재 uid 기준으로 맞춤.
       // (앱 최초 실행 시 main()의 백그라운드 동기화만으로는, 나중에 로그인한 계정이 반영되지 않을 수 있음.)
       await StoreCacheService.syncFirestoreToHive();
@@ -160,16 +176,176 @@ class _MainScreenState extends State<MainScreen> {
 
       if (!mounted) return;
       await _runSwipeHintIfNeeded();
+
+      // 체험모드 감지
+      if (uid != null && storeId.isNotEmpty) {
+        final demoCheck = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        if (demoCheck.data()?['isDemo'] == true && mounted) {
+          setState(() {
+            _isDemo = true;
+            _demoStoreId = storeId;
+          });
+        }
+      }
+
+      // ── 온보딩 가이드 초기화 ──
+      await OnboardingGuideService.instance.init();
+
+      // MainScreen에 도달했으면 이미 로그인 완료 → login 단계 자동 완료
+      if (OnboardingGuideService.instance.currentStep == OnboardingStep.login) {
+        await OnboardingGuideService.instance.completeStep(OnboardingStep.login);
+      }
+
+      await OnboardingGuideService.instance.syncWithFirestore(
+        uid: uid,
+        storeId: storeId,
+      );
+      OnboardingGuideService.instance.addListener(_onOnboardingStepChanged);
+      if (mounted) _showOnboardingTooltipIfNeeded();
     });
   }
 
   @override
   void dispose() {
+    _onboardingOverlay?.remove();
+    _onboardingOverlay = null;
+    OnboardingGuideService.instance.removeListener(_onOnboardingStepChanged);
     _pageController.dispose();
     super.dispose();
   }
 
+  void _onOnboardingStepChanged() {
+    if (mounted) _showOnboardingTooltipIfNeeded();
+  }
+
+  void _showOnboardingTooltipIfNeeded([int retryCount = 0]) {
+    final guide = OnboardingGuideService.instance;
+    if (!guide.isActive) return;
+    if (retryCount > 5) return; // 최대 5회 재시도
+
+    // Step 2: 사업장 등록 안내 → 설정 탭을 가리킴
+    if (guide.currentStep == OnboardingStep.storeSetup) {
+      final settingsBox = _settingsTabKey.currentContext?.findRenderObject() as RenderBox?;
+      if (settingsBox == null || !settingsBox.hasSize) {
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) _showOnboardingTooltipIfNeeded(retryCount + 1);
+        });
+        return;
+      }
+      _onboardingOverlay?.remove();
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (!mounted) return;
+        _onboardingOverlay = OnboardingTooltipOverlay.show(
+          context: context,
+          targetKey: _settingsTabKey,
+          step: OnboardingStep.storeSetup,
+          isDemo: _isDemo,
+          direction: TooltipDirection.above,
+          targetIcon: Icons.settings_outlined,
+          targetColor: const Color(0xFF607D8B),
+          onDismiss: () {
+            _onboardingOverlay = null;
+            // 설정 탭으로 이동
+            _onBottomNavTap(4);
+          },
+          onSkipAll: () {
+            _onboardingOverlay = null;
+            OnboardingGuideService.instance.dismiss();
+          },
+        );
+      });
+      return;
+    }
+
+    // Step 3: 직원 등록 안내 (대시보드 탭에서)
+    if (guide.currentStep == OnboardingStep.firstStaff && _bottomIndex == 0) {
+      // FAB가 렌더링될 때까지 대기
+      final fabBox = _fabKey.currentContext?.findRenderObject() as RenderBox?;
+      if (fabBox == null || !fabBox.hasSize) {
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) _showOnboardingTooltipIfNeeded(retryCount + 1);
+        });
+        return;
+      }
+      _onboardingOverlay?.remove();
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (!mounted) return;
+        _onboardingOverlay = OnboardingTooltipOverlay.show(
+          context: context,
+          targetKey: _fabKey,
+          step: OnboardingStep.firstStaff,
+          isDemo: _isDemo,
+          direction: TooltipDirection.above,
+          targetIcon: Icons.add,
+          targetColor: const Color(0xFF1a1a2e),
+          onDismiss: () {
+            _onboardingOverlay = null;
+            OnboardingGuideService.instance.completeStep(OnboardingStep.firstStaff);
+          },
+          onSkipAll: () {
+            _onboardingOverlay = null;
+            OnboardingGuideService.instance.dismiss();
+          },
+        );
+      });
+    }
+
+    // Step 5: 계약서 작성 안내
+    if (guide.currentStep == OnboardingStep.createContract && _bottomIndex == 0) {
+      _onboardingOverlay?.remove();
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (!mounted) return;
+        _onboardingOverlay = OnboardingTooltipOverlay.show(
+          context: context,
+          targetKey: _docsTabKey,
+          step: OnboardingStep.createContract,
+          isDemo: _isDemo,
+          direction: TooltipDirection.above,
+          targetIcon: Icons.description_outlined,
+          targetColor: const Color(0xFF1565C0),
+          onDismiss: () {
+            _onboardingOverlay = null;
+            OnboardingGuideService.instance.completeStep(OnboardingStep.createContract);
+          },
+          onSkipAll: () {
+            _onboardingOverlay = null;
+            OnboardingGuideService.instance.dismiss();
+          },
+        );
+      });
+    }
+
+    // Step 6: 대시보드 리포트 확인 안내 (모든 서류 완료 후)
+    if (guide.currentStep == OnboardingStep.checkDashboard) {
+      _onboardingOverlay?.remove();
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (!mounted) return;
+        _onboardingOverlay = OnboardingTooltipOverlay.show(
+          context: context,
+          targetKey: _dashboardTabKey,
+          step: OnboardingStep.checkDashboard,
+          isDemo: _isDemo,
+          direction: TooltipDirection.above,
+          targetIcon: Icons.dashboard_outlined,
+          targetColor: const Color(0xFF1a1a2e),
+          onDismiss: () {
+            _onboardingOverlay = null;
+            OnboardingGuideService.instance.completeStep(OnboardingStep.checkDashboard);
+            _onBottomNavTap(0);
+          },
+          onSkipAll: () {
+            _onboardingOverlay = null;
+            OnboardingGuideService.instance.dismiss();
+          },
+        );
+      });
+    }
+  }
+
   void _onBottomNavTap(int i) {
+    // 탭 전환 시 온보딩 오버레이 항상 제거
+    _onboardingOverlay?.remove();
+    _onboardingOverlay = null;
     setState(() => _bottomIndex = i);
     if (i == 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -180,6 +356,8 @@ class _MainScreenState extends State<MainScreen> {
             curve: Curves.easeOut,
           );
         }
+        // 대시보드로 돌아왔을 때 온보딩 확인
+        _showOnboardingTooltipIfNeeded();
       });
     }
   }
@@ -245,9 +423,9 @@ class _MainScreenState extends State<MainScreen> {
         selectedItemColor: MainScreen.kBarBg,
         unselectedItemColor: Colors.grey,
         onTap: _onBottomNavTap,
-        items: const [
+        items: [
           BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_outlined),
+            icon: Icon(Icons.dashboard_outlined, key: _dashboardTabKey),
             label: '대시보드',
           ),
           BottomNavigationBarItem(
@@ -259,18 +437,60 @@ class _MainScreenState extends State<MainScreen> {
             label: '공지/교육',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.description_outlined),
+            icon: Icon(Icons.description_outlined, key: _docsTabKey),
             label: '노무서류',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
+            icon: Icon(Icons.settings_outlined, key: _settingsTabKey),
             label: '설정',
           ),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      persistentFooterButtons: _isDemo ? [
+        SizedBox(
+          width: double.infinity,
+          child: Material(
+            color: const Color(0xFF10B981),
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AlbaMainScreen(
+                      storeId: _demoStoreId,
+                      workerId: 'worker_a',
+                    ),
+                  ),
+                );
+              },
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.swap_horiz_rounded, color: Colors.white, size: 22),
+                    SizedBox(width: 8),
+                    Text(
+                      '👷 알바가 보는 화면 체험하기',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ] : null,
       floatingActionButton: _bottomIndex == 0
           ? Padding(
+              key: _fabKey,
               padding: const EdgeInsets.only(bottom: 16),
               child: SpeedDial(
                 icon: Icons.add,
@@ -451,18 +671,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
     if ((name.isEmpty || !isRegistered) && !_storeSnackShown) {
       _storeSnackShown = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('사업장 정보를 등록해주세요'),
-            action: SnackBarAction(
-              label: '등록하기',
-              onPressed: widget.onOpenSettings,
-            ),
-          ),
-        );
-      });
+      // 스낵바 제거: 이미 화면에 _buildUnregisteredBanner()로 표기되므로, 알바 로그인 시 등 잘못 팝업되는 문제 방지.
     }
 
     _uiTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
@@ -544,6 +753,17 @@ class _DashboardPageState extends State<DashboardPage> {
                     _pageDot(active: widget.pageIndex == 1),
                     const SizedBox(width: 4),
                     _pageDot(active: widget.pageIndex == 2),
+                    if (widget.pageIndex == 0) ...[
+                      const SizedBox(width: 8),
+                      const Text(
+                        '옆으로 넘겨보세요 ➔',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -637,6 +857,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     if (!isRegistered) const SizedBox(height: 12),
                     if (storeId.isNotEmpty) StandingChangeAlert(storeId: storeId),
 
+
                     Row(
                       children: [
                         Expanded(
@@ -656,37 +877,15 @@ class _DashboardPageState extends State<DashboardPage> {
                         ),
                       ],
                     ),
-                    if (storeData['fiveOrMoreDecisionReason'] != null && 
-                        storeData['fiveOrMoreDecisionReason'].toString().isNotEmpty && 
-                        sizeMode == 'auto') ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.red.shade200),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.info_outline, color: Colors.red, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                storeData['fiveOrMoreDecisionReason'].toString(),
-                                style: const TextStyle(
-                                  color: Colors.red,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  height: 1.3,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                    if (storeId.isNotEmpty)
+                      ComplianceAlertBanner(
+                        storeId: storeId,
+                        storeData: storeData,
+                        fiveOrMoreReason: (sizeMode == 'auto')
+                            ? storeData['fiveOrMoreDecisionReason']?.toString()
+                            : null,
+                        refreshKey: activeWorkers.map((w) => '${w.id}_${w.isPaperContract}_${w.documentsInitialized}').join(','),
                       ),
-                    ],
                     const SizedBox(height: 12),
                     _workingNowCard(
                       storeId: storeId,
@@ -888,7 +1087,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
         for (final a in open) {
           final w = workerById[a.staffId];
-          final name = w?.name ?? a.staffId;
+          final isOrphaned = w == null;
+          final name = isOrphaned ? '(삭제된 직원)' : (w.name.isEmpty ? a.staffId : w.name);
           
           // 오늘 누적 시간 계산
           final staffLogs = logsByStaff[a.staffId] ?? [];
@@ -902,17 +1102,22 @@ class _DashboardPageState extends State<DashboardPage> {
           rows.add(
             _DashboardWorkRow(
               name: name,
-              timeText: '오늘 총 ${format(totalMins)} (현재 ${format(sessionMins)}째)',
-              status: pending
-                  ? '출근 승인 대기'
-                  : (approved
-                      ? '계획 외 승인'
-                      : (unplanned ? '계획 외 근무 발생' : '정상')),
-              avatarBg: unplanned || approved || pending
-                  ? const Color(0xFFEF9F27)
-                  : const Color(0xFF1a6ebd),
+              timeText: isOrphaned ? '출근 기록을 삭제하려면 누르세요' : '오늘 총 ${format(totalMins)} (현재 ${format(sessionMins)}째)',
+              status: isOrphaned
+                  ? '삭제 필요'
+                  : (pending
+                      ? '출근 승인 대기'
+                      : (approved
+                          ? '계획 외 승인'
+                          : (unplanned ? '계획 외 근무 발생' : '정상'))),
+              avatarBg: isOrphaned 
+                  ? const Color(0xFFE24B4A) 
+                  : (unplanned || approved || pending
+                      ? const Color(0xFFEF9F27)
+                      : const Color(0xFF1a6ebd)),
               attendance: a,
               needsApproval: unplanned || pending,
+              isOrphaned: isOrphaned,
             ),
           );
         }
@@ -1022,9 +1227,11 @@ class _DashboardPageState extends State<DashboardPage> {
                 statusBg: isWarn ? const Color(0xFFFFF0DC) : const Color(0xFFEAF3DE),
                 statusText: isWarn ? const Color(0xFF854F0B) : const Color(0xFF286b3a),
                 isLast: i == rows.length - 1,
-                onTap: row.needsApproval && row.attendance != null
-                    ? () => _approveAttendanceForBoss(row.attendance!)
-                    : null,
+                onTap: row.isOrphaned && row.attendance != null
+                    ? () => _deleteOrphanedAttendance(row.attendance!)
+                    : (row.needsApproval && row.attendance != null
+                        ? () => _approveAttendanceForBoss(row.attendance!)
+                        : null),
               );
             }),
         ],
@@ -1297,6 +1504,45 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Future<void> _deleteOrphanedAttendance(Attendance attendance) async {
+    if (!mounted) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('삭제된 직원 기록 정리'),
+        content: const Text(
+          '직원이 퇴사 또는 삭제되었으나 당시의 출근 기록(퇴근 미완료)이 남아있습니다.\n\n해당 기록을 지금 완전히 삭제하시겠습니까?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      await DatabaseService().deleteAttendance(attendance.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('기록이 정상적으로 삭제되었습니다.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('삭제 실패: $e')),
+      );
+    }
+  }
+
   Widget _exceptionPendingCard({
     required String storeId,
     required List<Worker> workers,
@@ -1518,21 +1764,43 @@ class _DashboardPageState extends State<DashboardPage> {
       final expiry = DateTime.tryParse(w.healthCertExpiry!);
       if (expiry == null) continue;
       final d = DateTime(expiry.year, expiry.month, expiry.day).difference(DateTime(today.year, today.month, today.day)).inDays;
-      if (d < 0 || d > 30) continue;
+      if (d > 30) continue;
       final urgent = d <= 7;
+      
+      String ddayText;
+      if (d < 0) {
+        ddayText = '만료 (D+${-d})';
+      } else if (d == 0) {
+        ddayText = 'D-Day';
+      } else {
+        ddayText = 'D-$d';
+      }
+      
       rows.add(
         _DashboardHealthRow(
           name: w.name,
           date: '${expiry.year}.${expiry.month.toString().padLeft(2, '0')}.${expiry.day.toString().padLeft(2, '0')}',
-          dday: 'D-$d',
+          dday: ddayText,
           dotColor: urgent ? const Color(0xFFE24B4A) : const Color(0xFFEF9F27),
           badgeBg: urgent ? const Color(0xFFFCEBEB) : const Color(0xFFFFF0DC),
           badgeText: urgent ? const Color(0xFFA32D2D) : const Color(0xFF854F0B),
         ),
       );
     }
-    rows.sort((a, b) => a.dday.compareTo(b.dday));
+    rows.sort((a, b) => _parseDDay(a.dday).compareTo(_parseDDay(b.dday)));
     return rows;
+  }
+
+  int _parseDDay(String ddayStr) {
+    if (ddayStr == 'D-Day') return 0;
+    if (ddayStr.startsWith('만료 (D+')) {
+      final val = int.tryParse(ddayStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return -val; // 만료된 것은 음수로 반환하여 최상단에 오게 함
+    }
+    if (ddayStr.startsWith('D-')) {
+      return int.tryParse(ddayStr.substring(2)) ?? 999;
+    }
+    return 999;
   }
 
   Widget _buildWorkerRow({
@@ -1760,27 +2028,36 @@ class _DashboardPageState extends State<DashboardPage> {
           .doc(storeId)
           .collection('notices')
           .orderBy('createdAt', descending: true)
-          .limit(1)
+          .limit(3)
           .get(),
       builder: (context, snap) {
         if (!snap.hasData) return const SizedBox.shrink();
+        
+        Widget wrapCard(Widget child) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE0E0E0), width: 0.5),
+              boxShadow: [
+                 BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: child,
+          );
+        }
+
         if (snap.data!.docs.isEmpty) {
           return InkWell(
-            onTap: () => widget.onOpenNoticeTab(0), // 0: 공지사항
+            onTap: () => widget.onOpenNoticeTab(0),
             borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE0E0E0), width: 0.5),
-              ),
-              child: Row(
+            child: wrapCard(
+              Row(
                 children: [
                   Icon(Icons.campaign_rounded, size: 20, color: Colors.blue.shade700),
                   const SizedBox(width: 8),
-                  const Text('최신 공지', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54)),
-                  const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
                       '등록된 공지사항이 없습니다.',
@@ -1789,45 +2066,114 @@ class _DashboardPageState extends State<DashboardPage> {
                       style: TextStyle(fontSize: 14, color: Colors.black54),
                     ),
                   ),
-                  const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
                 ],
               ),
             ),
           );
         }
 
-        final doc = snap.data!.docs.first;
-        final data = doc.data() as Map<String, dynamic>;
-        final title = data['title']?.toString() ?? '공지사항';
-
-        return InkWell(
-          onTap: () => widget.onOpenNoticeTab(0), // 0: 공지사항
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE0E0E0), width: 0.5),
-            ),
-            child: Row(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(Icons.campaign_rounded, size: 20, color: Colors.blue.shade700),
-                const SizedBox(width: 8),
-                const Text('최신 공지', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                Row(
+                  children: [
+                    Icon(Icons.campaign_rounded, size: 18, color: Colors.blue.shade700),
+                    const SizedBox(width: 6),
+                    const Text('최신 공지', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54)),
+                  ],
+                ),
+                InkWell(
+                  onTap: () => widget.onOpenNoticeTab(0),
+                  borderRadius: BorderRadius.circular(12),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text('공지사항 전체보기 >', style: TextStyle(fontSize: 12, color: Colors.blue)),
                   ),
                 ),
-                const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
               ],
             ),
-          ),
+            const SizedBox(height: 8),
+            ...snap.data!.docs.map((doc) {
+              final d = doc.data() as Map<String, dynamic>;
+              final title = d['title']?.toString() ?? '공지';
+              final content = d['content']?.toString() ?? '';
+              final imageUrl = d['imageUrl']?.toString() ?? '';
+              final createdAt = d['createdAt'];
+
+              String dateText = '';
+              if (createdAt is Timestamp) {
+                final dt = createdAt.toDate();
+                dateText = '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}';
+              }
+
+              return StatefulBuilder(
+                builder: (context, setItemState) {
+                  bool isExpanded = false;
+                  return InkWell(
+                    onTap: () => setItemState(() => isExpanded = !isExpanded),
+                    borderRadius: BorderRadius.circular(16),
+                    child: wrapCard(
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (dateText.isNotEmpty)
+                                      Text(
+                                        dateText,
+                                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                      ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      title,
+                                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                      maxLines: isExpanded ? null : 1,
+                                      overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (imageUrl.isNotEmpty && !isExpanded) ...[
+                                const SizedBox(width: 8),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: R2Image(storeId: storeId, imagePathOrId: imageUrl, width: 36, height: 36, fit: BoxFit.cover),
+                                ),
+                              ],
+                            ],
+                          ),
+                          if (isExpanded) ...[
+                            const SizedBox(height: 8),
+                            const Divider(height: 1),
+                            const SizedBox(height: 8),
+                            Text(
+                              content,
+                              style: const TextStyle(fontSize: 13, height: 1.4, color: Colors.black87),
+                            ),
+                            if (imageUrl.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: R2Image(storeId: storeId, imagePathOrId: imageUrl, fit: BoxFit.contain, width: double.infinity),
+                              ),
+                            ]
+                          ]
+                        ],
+                      ),
+                    ),
+                  );
+                }
+              );
+            }),
+          ],
         );
       },
     );
@@ -2095,6 +2441,7 @@ class _DashboardWorkRow {
     required this.avatarBg,
     this.attendance,
     this.needsApproval = false,
+    this.isOrphaned = false,
   });
 
   final String name;
@@ -2103,6 +2450,7 @@ class _DashboardWorkRow {
   final Color avatarBg;
   final Attendance? attendance;
   final bool needsApproval;
+  final bool isOrphaned;
 }
 
 class _DashboardHealthRow {
@@ -2211,6 +2559,7 @@ class _SchedulePageState extends State<SchedulePage> {
     final initialOut = current?.checkOut ?? worker.checkOutTime;
     final hasShift = _hasEffectiveShift(worker, target, overrideBox.toMap());
     final isSubstituteShift = current != null && current.checkIn != null;
+    final isAnnualLeave = current?.isAnnualLeave ?? false;
     final action = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -2231,15 +2580,21 @@ class _SchedulePageState extends State<SchedulePage> {
               ),
               ListTile(
                 leading: const Icon(Icons.swap_horiz_rounded),
-                title: const Text('대근자 지정'),
+                title: const Text('대타 / 교대 지정'),
                 enabled: hasShift,
                 onTap: hasShift ? () => Navigator.of(context).pop('substitute') : null,
               ),
+              if (!isAnnualLeave)
+                ListTile(
+                  leading: const Icon(Icons.beach_access_rounded, color: Color(0xFF1565C0)),
+                  title: const Text('연차 처리', style: TextStyle(color: Color(0xFF1565C0), fontWeight: FontWeight.w600)),
+                  onTap: () => Navigator.of(context).pop('annual_leave'),
+                ),
               if (current != null)
                 ListTile(
                   leading: const Icon(Icons.restart_alt_rounded, color: Color(0xFFE24B4A)),
                   title: Text(
-                    isSubstituteShift ? '대근 지정 취소' : '기본 근무로 초기화',
+                    isAnnualLeave ? '연차 취소' : isSubstituteShift ? '대근 지정 취소' : '기본 근무로 초기화',
                     style: const TextStyle(color: Color(0xFFE24B4A), fontWeight: FontWeight.w600),
                   ),
                   onTap: () => Navigator.of(context).pop('reset'),
@@ -2253,6 +2608,11 @@ class _SchedulePageState extends State<SchedulePage> {
 
     if (action == 'reset') {
       await _resetOverride(worker, target, overrideBox);
+      return;
+    }
+
+    if (action == 'annual_leave') {
+      await _handleAnnualLeave(worker, target, overrideBox);
       return;
     }
 
@@ -2354,6 +2714,74 @@ class _SchedulePageState extends State<SchedulePage> {
     return '$h:$m';
   }
 
+  /// 연차 처리: ScheduleOverride + Attendance(isAttendanceEquivalent) + usedAnnualLeave 차감
+  Future<void> _handleAnnualLeave(Worker worker, DateTime date, Box<ScheduleOverride> overrideBox) async {
+    final ymd = _toYmd(date);
+    final key = '${worker.id}_$ymd';
+
+    // 이미 연차 처리된 날인지 확인
+    final existing = overrideBox.get(key);
+    if (existing?.isAnnualLeave ?? false) return;
+
+    // 확인 다이얼로그
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('연차 처리'),
+        content: Text(
+          '${worker.name}의 ${date.month}/${date.day} 근무를 연차로 처리합니다.\n'
+          '연차 1일이 차감되며, 해당 일은 출근한 것으로 간주되어 주휴수당에 영향을 주지 않습니다.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('연차 처리')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // 1. ScheduleOverride 저장 (연차 타입)
+    await overrideBox.put(
+      key,
+      ScheduleOverride(
+        workerId: worker.id,
+        date: ymd,
+        checkIn: null,
+        checkOut: null,
+        leaveType: 'annual_leave',
+      ),
+    );
+
+    // 2. Attendance 레코드 생성 (isAttendanceEquivalent = true)
+    final sid = await WorkerService.resolveStoreId();
+    if (sid.isNotEmpty) {
+      final leaveAttendanceId = 'leave_${worker.id}_$ymd';
+      final leaveDate = DateTime(date.year, date.month, date.day, 9, 0);
+      final leaveAttendance = Attendance(
+        id: leaveAttendanceId,
+        staffId: worker.id,
+        storeId: sid,
+        clockIn: leaveDate,
+        clockOut: leaveDate,
+        type: AttendanceType.mobile,
+        isAttendanceEquivalent: true,
+        attendanceStatus: 'annual_leave',
+        isEditedByBoss: true,
+        editedByBossAt: AppClock.now(),
+      );
+      await DatabaseService().recordAttendance(leaveAttendance);
+
+      // 3. usedAnnualLeave 1.0 증가
+      worker.usedAnnualLeave += 1.0;
+      await WorkerService.save(worker);
+
+      // 4. Firestore rosterDay 동기화
+      await _syncRosterDayToFirestore(worker.id, ymd, null, null, isOff: true);
+    }
+
+    if (mounted) setState(() {});
+  }
+
   Future<void> _resetOverride(Worker worker, DateTime date, Box<ScheduleOverride> overrideBox) async {
     final ymd = _toYmd(date);
     final key = '${worker.id}_$ymd';
@@ -2361,6 +2789,41 @@ class _SchedulePageState extends State<SchedulePage> {
     if (!hasOverride) return;
 
     final o = overrideBox.get(key);
+
+    // 연차 취소 처리
+    if (o?.isAnnualLeave ?? false) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('연차 취소'),
+          content: Text('${worker.name}의 ${date.month}/${date.day} 연차를 취소합니다.\n차감된 연차 1일이 복원됩니다.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('아니오')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE24B4A)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('연차 취소'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+
+      await overrideBox.delete(key);
+      await _syncRosterDayToFirestore(worker.id, ymd, null, null);
+
+      // Attendance 삭제
+      final leaveAttendanceId = 'leave_${worker.id}_$ymd';
+      await DatabaseService().deleteAttendance(leaveAttendanceId);
+
+      // usedAnnualLeave 복원
+      worker.usedAnnualLeave = (worker.usedAnnualLeave - 1.0).clamp(0.0, double.infinity);
+      await WorkerService.save(worker);
+
+      if (mounted) setState(() {});
+      return;
+    }
+
     final isSubShift = o != null && o.checkIn != null; // Substitute worker (currently working)
     final isInOffState = o != null && o.checkIn == null; // Original worker (currently off)
 
@@ -2422,8 +2885,9 @@ class _SchedulePageState extends State<SchedulePage> {
     String workerId,
     String ymd,
     String? inHm,
-    String? outHm,
-  ) async {
+    String? outHm, {
+    bool isOff = false,
+  }) async {
     final sid = await WorkerService.resolveStoreId();
     if (sid.isEmpty) return;
     await DatabaseService().syncWorkerRosterDay(
@@ -2432,6 +2896,7 @@ class _SchedulePageState extends State<SchedulePage> {
       dateYmd: ymd,
       checkInHm: inHm,
       checkOutHm: outHm,
+      isOff: isOff,
     );
   }
 
@@ -2513,7 +2978,8 @@ class _SchedulePageState extends State<SchedulePage> {
         checkOut: normalizedOut,
       ),
     );
-    await _syncRosterDayToFirestore(worker.id, ymd, normalizedIn, normalizedOut);
+    final forceOff = isNoShift && hasBaseShift;
+    await _syncRosterDayToFirestore(worker.id, ymd, normalizedIn, normalizedOut, isOff: forceOff);
   }
 
   Future<void> _assignSubstitution({
@@ -2533,22 +2999,12 @@ class _SchedulePageState extends State<SchedulePage> {
       return;
     }
 
-    final available = workers.where((w) {
-      if (w.id == originalWorker.id) return false;
-      final shift = _effectiveShiftRange(w, targetDate, overrides);
-      if (shift == null) return true;
-      return !_isOverlapping(
-        sourceShift.checkIn,
-        sourceShift.checkOut,
-        shift.checkIn,
-        shift.checkOut,
-      );
-    }).toList();
+    final available = workers.where((w) => w.id != originalWorker.id).toList();
 
     if (!mounted) return;
     if (available.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('현재 시간대에 대근 가능한 직원이 없습니다.')),
+        const SnackBar(content: Text('교대 또는 대타 가능한 직원이 없습니다.')),
       );
       return;
     }
@@ -2566,8 +3022,8 @@ class _SchedulePageState extends State<SchedulePage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const ListTile(
-                title: Text('대근자 지정', style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: Text('해당 시간대에 근무가 없는 직원만 표시됩니다.'),
+                title: Text('대타 / 교대 지정', style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text('근무가 없는 직원은 대타, 근무가 있는 직원은 맞교대 처리됩니다.'),
               ),
               ...available.map(
                 (w) => ListTile(
@@ -2583,22 +3039,42 @@ class _SchedulePageState extends State<SchedulePage> {
     );
     if (selected == null) return;
 
+    final selectedShift = _effectiveShiftRange(selected, targetDate, overrides);
+    final isSwap = selectedShift != null;
+
     final beforeBMinutes = _workerWeeklyPureMinutes(selected, overrides, _currentWeekStart);
 
-    await _saveOverrideWithCleanup(
-      worker: originalWorker,
-      date: targetDate,
-      checkIn: null,
-      checkOut: null,
-      overrideBox: overrideBox,
-    );
-    await _saveOverrideWithCleanup(
-      worker: selected,
-      date: targetDate,
-      checkIn: sourceShift.checkIn,
-      checkOut: sourceShift.checkOut,
-      overrideBox: overrideBox,
-    );
+    if (isSwap) {
+      await _saveOverrideWithCleanup(
+        worker: originalWorker,
+        date: targetDate,
+        checkIn: selectedShift.checkIn,
+        checkOut: selectedShift.checkOut,
+        overrideBox: overrideBox,
+      );
+      await _saveOverrideWithCleanup(
+        worker: selected,
+        date: targetDate,
+        checkIn: sourceShift.checkIn,
+        checkOut: sourceShift.checkOut,
+        overrideBox: overrideBox,
+      );
+    } else {
+      await _saveOverrideWithCleanup(
+        worker: originalWorker,
+        date: targetDate,
+        checkIn: null,
+        checkOut: null,
+        overrideBox: overrideBox,
+      );
+      await _saveOverrideWithCleanup(
+        worker: selected,
+        date: targetDate,
+        checkIn: sourceShift.checkIn,
+        checkOut: sourceShift.checkOut,
+        overrideBox: overrideBox,
+      );
+    }
 
     await _checkStandingFlipRiskAfterScheduleChange();
     if (!mounted) return;
@@ -2611,7 +3087,9 @@ class _SchedulePageState extends State<SchedulePage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '${originalWorker.name} 근무를 ${selected.name}에게 대근 배정했습니다.',
+          isSwap
+              ? '${originalWorker.name} 님과 ${selected.name} 님의 근무를 맞교대했습니다.'
+              : '${originalWorker.name} 님의 근무를 ${selected.name} 님에게 대타 배정했습니다.',
         ),
       ),
     );
@@ -2620,9 +3098,7 @@ class _SchedulePageState extends State<SchedulePage> {
         SnackBar(
           backgroundColor: Colors.orange.shade700,
           content: Text(
-            '주휴수당 발생 주의: ${selected.name}의 이번 주 순수 근로가 ${(
-              afterBMinutes / 60.0
-            ).toStringAsFixed(1)}시간입니다.',
+            '주휴수당 발생 주의: ${selected.name}의 이번 주 순수 근로가 ${PayrollCalculator.formatHoursAsKorean(afterBMinutes / 60.0)}입니다.',
           ),
         ),
       );
@@ -2700,6 +3176,8 @@ class _SchedulePageState extends State<SchedulePage> {
   }) {
     final list = <Attendance>[];
     for (final worker in workers) {
+      if (worker.workerType == 'dispatch') continue;
+      final dayToTime = _parseWorkerSchedule(worker);
       for (var d = periodStart;
           !d.isAfter(periodEnd);
           d = d.add(const Duration(days: 1))) {
@@ -2708,8 +3186,10 @@ class _SchedulePageState extends State<SchedulePage> {
         final o = overrides[key];
         final baseDay = d.weekday == DateTime.sunday ? 0 : d.weekday;
         final hasBaseShift = worker.workDays.contains(baseDay);
-        final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? worker.checkInTime : null);
-        final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? worker.checkOutTime : null);
+        final defaultIn = dayToTime[baseDay]?.start ?? worker.checkInTime;
+        final defaultOut = dayToTime[baseDay]?.end ?? worker.checkOutTime;
+        final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? defaultIn : null);
+        final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? defaultOut : null);
         if (checkIn == null || checkOut == null) continue;
 
         final inDt = _ymdWithHm(d, checkIn);
@@ -2742,14 +3222,18 @@ class _SchedulePageState extends State<SchedulePage> {
   int _weeklyCost(List<Worker> workers, Map<dynamic, ScheduleOverride> overrides) {
     var total = 0.0;
     for (final worker in workers) {
+      if (worker.workerType == 'dispatch') continue;
+      final dayToTime = _parseWorkerSchedule(worker);
       for (var i = 0; i < 7; i++) {
         final date = _currentWeekStart.add(Duration(days: i));
         final key = '${worker.id}_${_toYmd(date)}';
         final o = overrides[key];
         final baseDay = (i == 6) ? 0 : i + 1;
         final hasBaseShift = worker.workDays.contains(baseDay);
-        final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? worker.checkInTime : null);
-        final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? worker.checkOutTime : null);
+        final defaultIn = dayToTime[baseDay]?.start ?? worker.checkInTime;
+        final defaultOut = dayToTime[baseDay]?.end ?? worker.checkOutTime;
+        final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? defaultIn : null);
+        final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? defaultOut : null);
         if (checkIn == null || checkOut == null) continue;
         final minutes = _minutesBetween(checkIn, checkOut);
         if (minutes <= 0) continue;
@@ -2767,14 +3251,18 @@ class _SchedulePageState extends State<SchedulePage> {
   ) {
     var total = 0;
     for (final worker in workers) {
+      if (worker.workerType == 'dispatch') continue;
+      final dayToTime = _parseWorkerSchedule(worker);
       for (var i = 0; i < 7; i++) {
         final date = weekStart.add(Duration(days: i));
         final key = '${worker.id}_${_toYmd(date)}';
         final o = overrides[key];
         final baseDay = (i == 6) ? 0 : i + 1;
         final hasBaseShift = worker.workDays.contains(baseDay);
-        final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? worker.checkInTime : null);
-        final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? worker.checkOutTime : null);
+        final defaultIn = dayToTime[baseDay]?.start ?? worker.checkInTime;
+        final defaultOut = dayToTime[baseDay]?.end ?? worker.checkOutTime;
+        final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? defaultIn : null);
+        final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? defaultOut : null);
         if (checkIn == null || checkOut == null) continue;
         final minutes = _minutesBetween(checkIn, checkOut);
         if (minutes <= 0) continue;
@@ -2790,14 +3278,17 @@ class _SchedulePageState extends State<SchedulePage> {
     DateTime weekStart,
   ) {
     var total = 0;
+    final dayToTime = _parseWorkerSchedule(worker);
     for (var i = 0; i < 7; i++) {
       final date = weekStart.add(Duration(days: i));
       final key = '${worker.id}_${_toYmd(date)}';
       final o = overrides[key];
       final baseDay = (i == 6) ? 0 : i + 1;
       final hasBaseShift = worker.workDays.contains(baseDay);
-      final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? worker.checkInTime : null);
-      final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? worker.checkOutTime : null);
+      final defaultIn = dayToTime[baseDay]?.start ?? worker.checkInTime;
+      final defaultOut = dayToTime[baseDay]?.end ?? worker.checkOutTime;
+      final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? defaultIn : null);
+      final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? defaultOut : null);
       if (checkIn == null || checkOut == null) continue;
       final minutes = _minutesBetween(checkIn, checkOut);
       if (minutes <= 0) continue;
@@ -2913,9 +3404,11 @@ class _SchedulePageState extends State<SchedulePage> {
                   '근무시간표',
                   style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.6)),
                 ),
-                const Text(
-                  '이번 주',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
+                Text(
+                  _isSameDay(_currentWeekStart, _getMonday(AppClock.now()))
+                      ? '이번 주'
+                      : '${_currentWeekStart.month}/${_currentWeekStart.day} ~ ${_currentWeekStart.add(const Duration(days: 6)).month}/${_currentWeekStart.add(const Duration(days: 6)).day}',
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
                 ),
               ],
             ),
@@ -2956,8 +3449,8 @@ class _SchedulePageState extends State<SchedulePage> {
                 color: const Color(0xFFEAF2FF),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Text(
-                  '4주 평균 순수근로시간: ${avg4w.currentAvgHours.toStringAsFixed(1)}시간 '
-                  '(기준 대비 ${avgDelta >= 0 ? '+' : ''}${avgDelta.toStringAsFixed(1)}시간)',
+                  '4주 평균 순수근로시간: ${PayrollCalculator.formatHoursAsKorean(avg4w.currentAvgHours)} '
+                  '(기준 대비 ${avgDelta >= 0 ? '+' : ''}${PayrollCalculator.formatHoursAsKorean(avgDelta)})',
                   style: const TextStyle(
                     color: Color(0xFF1A4C9A),
                     fontWeight: FontWeight.w600,
@@ -3037,7 +3530,7 @@ class _SchedulePageState extends State<SchedulePage> {
                                   ],
                                 ),
                                 Text(
-                                  '순수 ${pureHours.toStringAsFixed(1)}h',
+                                  '순수 ${PayrollCalculator.formatHoursAsKorean(pureHours)}',
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w600,
@@ -3091,6 +3584,7 @@ class _SchedulePageState extends State<SchedulePage> {
                                     false);
                             final weekend = i >= 5;
                             final isToday = _isSameDay(date, AppClock.now());
+                            final isAnnualLeaveCell = override?.isAnnualLeave ?? false;
                             return Expanded(
                               child: GestureDetector(
                                 onTap: () => _onCellTap(worker, i),
@@ -3098,7 +3592,9 @@ class _SchedulePageState extends State<SchedulePage> {
                                   height: 52,
                                   margin: const EdgeInsets.all(2),
                                   decoration: BoxDecoration(
-                                    color: hasShift
+                                    color: isAnnualLeaveCell
+                                        ? const Color(0xFFE3F2FD)
+                                        : hasShift
                                         ? (isOverriddenShift
                                             ? const Color(0xFF5E35B1)
                                             : (hasNightRisk
@@ -3111,6 +3607,8 @@ class _SchedulePageState extends State<SchedulePage> {
                                     border: Border.all(
                                       color: isToday
                                           ? const Color(0xFF1a6ebd)
+                                          : isAnnualLeaveCell
+                                              ? const Color(0xFF1565C0)
                                           : hasShift
                                               ? (isOverriddenShift
                                                   ? const Color(0xFF4527A0)
@@ -3123,7 +3621,17 @@ class _SchedulePageState extends State<SchedulePage> {
                                       width: isToday ? 1.2 : 0.5,
                                     ),
                                   ),
-                                  child: hasShift
+                                  child: isAnnualLeaveCell
+                                      ? Center(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              const Icon(Icons.beach_access_rounded, size: 16, color: Color(0xFF1565C0)),
+                                              const Text('연차', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF1565C0))),
+                                            ],
+                                          ),
+                                        )
+                                      : hasShift
                                       ? Stack(
                                           children: [
                                             Container(

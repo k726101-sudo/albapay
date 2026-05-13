@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'screens/dashboard_screen.dart';
-// import 'firebase_options.dart'; // 주석 처리: 사용자가 flutterfire configure 후 해제 필요
+import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // TODO: 터미널에서 `flutterfire configure` 실행하여 admin_web 프로젝트용 옵션 파일을 생성한 뒤,
   // 아래 주석을 해제하면 Firestore 통신이 가능해집니다.
-  /*
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  */
   
   runApp(const AdminWebApp());
 }

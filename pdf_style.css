@@ -1,0 +1,74 @@
+/* pdf_style.css */
+body {
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+    color: #333 !important;
+    /* 투명 워터마크 (보안문서) */
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Ctext x='50' y='200' transform='rotate(-30 200 200)' fill='rgba(220,0,0,0.05)' font-size='50' font-family='sans-serif' font-weight='bold'%3E보 안 문 서%3C/text%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-position: center;
+}
+
+/* 강조 텍스트(볼드) 부드러운 컬러 적용 */
+strong {
+    color: #1a56db; /* Subtle modern blue */
+    font-weight: 600;
+}
+
+/* 인용구(Blockquote) 디자인 강화 */
+blockquote {
+    background-color: #f8fafc;
+    border-left: 4px solid #3b82f6;
+    padding: 10px 15px;
+    margin: 1em 0;
+    color: #475569;
+    border-radius: 0 4px 4px 0;
+}
+
+/* 표(Table) 가독성 향상 및 컬러링 */
+table {
+    font-size: 12px !important;
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5em 0;
+}
+
+th {
+    background-color: #eff6ff; /* Light blue */
+    color: #1e3a8a;
+    font-weight: 600;
+    text-align: left;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+}
+
+td {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+}
+
+tr:nth-child(even) {
+    background-color: #f8fafc; /* Zebra striping for readability */
+}
+
+/* 헤딩(제목) 스타일링 */
+h1 { font-size: 24px !important; color: #0f172a; margin-top: 1.5em !important; margin-bottom: 0.5em !important; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; }
+h2 { font-size: 20px !important; color: #1e293b; margin-top: 1.5em !important; margin-bottom: 0.5em !important; }
+h3 { font-size: 16px !important; color: #334155; margin-top: 1em !important; margin-bottom: 0.5em !important; }
+h4 { font-size: 14px !important; color: #475569; margin-top: 1em !important; margin-bottom: 0.5em !important; }
+
+/* 인라인 코드 하이라이트 */
+code {
+    background-color: #fffbeb;
+    color: #b45309;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+pre code {
+    background-color: #1e293b;
+    color: #f8fafc;
+    padding: 10px;
+    display: block;
+    border-radius: 6px;
+}

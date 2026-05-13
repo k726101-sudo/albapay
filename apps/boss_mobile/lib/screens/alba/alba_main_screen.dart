@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:web/web.dart' as web;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -40,6 +40,15 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
   String? _topBannerMessage;
   Timer? _uiTimer;
   bool _isProcessing = false;
+  bool _isInitialLoading = true;
+  Map<String, dynamic> _workerData = const {};
+  Attendance? _currentOpenAttendance;
+  Map<String, Map<String, dynamic>> _rosterData = {};
+  List<Attendance> _weeklyData = [];
+  List<Attendance> _monthlyData = [];
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _noticesData = [];
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _expirationsTodayData = [];
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _incompleteTodosData = [];
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String get _workerId {
@@ -55,8 +64,8 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
   bool get _isEntryLandingLink {
     final q = Uri.base.queryParameters;
     final urlStore = (q['storeId'] ?? q['store_id'] ?? '').trim();
-    final sessionAction = web.window.sessionStorage.getItem(_sessionActionKey);
-    final sessionStore = web.window.sessionStorage.getItem(_sessionStoreKey);
+    final sessionAction = null;
+    final sessionStore = null;
     
     // 1. 매장 ID 확인
     final effectiveStoreId = urlStore.isNotEmpty ? urlStore : sessionStore;
@@ -73,18 +82,80 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
     return isAttendanceAction;
   }
 
+Future<void> _loadDashboardData() async {
+    try {
+      final results = await Future.wait([
+        _dbService.getWorkerRosterDays(widget.storeId, _workerId),
+        _weeklyAttendanceFuture(),
+        _monthlyAttendanceFuture(),
+        _db.collection('stores').doc(widget.storeId).get(),
+        _db.collection('stores').doc(widget.storeId).collection('notices').get(),
+        _expirationsTodayFuture(),
+        _incompleteTodosFuture(),
+      ]);
+      if (!mounted) return;
+      final rosterSnap = results[0] as QuerySnapshot<Map<String, dynamic>>;
+      final rMap = <String, Map<String, dynamic>>{};
+      for (final d in rosterSnap.docs) { rMap[d.id] = d.data(); }
+      setState(() {
+        _rosterData = rMap;
+        _weeklyData = results[1] as List<Attendance>;
+        _monthlyData = results[2] as List<Attendance>;
+        _noticesData = (results[4] as QuerySnapshot<Map<String, dynamic>>).docs;
+        _expirationsTodayData = results[5] as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+        _incompleteTodosData = results[6] as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+      });
+    } catch (e) {
+      debugPrint('Dashboard data load error: $e');
+    }
+  }
+
+  Future<void> _loadWorkerData() async {
+    try {
+      final snap = await _workerFuture();
+      if (mounted) {
+        setState(() {
+          _workerData = snap.data() ?? const {};
+          _isInitialLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Worker data load error: $e');
+      if (mounted) setState(() => _isInitialLoading = false);
+    }
+  }
+
+  Future<void> _loadOpenAttendance() async {
+    try {
+      final result = await _openAttendanceFuture();
+      if (mounted) {
+        setState(() {
+          _currentOpenAttendance = result;
+        });
+      }
+    } catch (e) {
+      debugPrint('Open attendance load error: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadDashboardData();
+    _loadWorkerData();
+    _loadOpenAttendance();
     AppClock.syncWithFirestore(widget.storeId);
     _uiTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       if (mounted) setState(() {});
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      UserGuidePopup.showIfNeeded(context, GuideType.alba).then((_) {});
       _runEntryLandingAttendance();
       _checkPendingDocuments();
     });
   }
+
+
 
   @override
   void dispose() {
@@ -162,9 +233,9 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
     _autoHandled = true;
     
     // Clear session once handled
-    web.window.sessionStorage.removeItem(_sessionActionKey);
-    web.window.sessionStorage.removeItem(_sessionStoreKey);
-    web.window.sessionStorage.removeItem('alba_pending_sig');
+    
+    
+    
 
     if (kDebugMode) print('DEBUG: _runEntryLandingAttendance logic starting...');
 
@@ -178,7 +249,7 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
 
     final openAttendance = await _openAttendanceFuture();
     final q = Uri.base.queryParameters;
-    final sessionAction = web.window.sessionStorage.getItem(_sessionActionKey);
+    final sessionAction = null;
     final isAttendanceAction = q['action'] == 'attendance' || sessionAction == 'attendance';
     
     if (kDebugMode) print('DEBUG: state - openAttendance=${openAttendance?.id}, action=$isAttendanceAction');
@@ -692,21 +763,22 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
       );
       await _dbService.recordAttendance(attendance);
 
+      String bannerMessage = '';
       if (shift != null) {
         final late = lateMinutes(
           actualClockIn: now,
           scheduledStart: shift.scheduledStart,
         );
         if (late > 0) {
-          _showTopBanner('오늘 $late분 지각하셨습니다');
+          bannerMessage = '오늘 $late분 지각하셨습니다';
         } else if (now.isBefore(shift.scheduledStart)) {
           final h = shift.scheduledStart.hour;
-          _showTopBanner('일찍 오셨네요! 출근 기록은 완료되었으며, 근무시간은 $h시부터 입니다.');
+          bannerMessage = '일찍 오셨네요! 출근 기록은 완료되었으며, 근무시간은 $h시부터 입니다.';
         } else {
-          _showTopBanner('출근 처리되었습니다');
+          bannerMessage = '출근 처리되었습니다';
         }
       } else {
-        _showTopBanner('근무표에 없는 출근입니다. 사장님 승인을 기다려 주세요.');
+        bannerMessage = '근무표에 없는 출근입니다. 사장님 승인을 기다려 주세요.';
       }
 
       if (status == 'pending_approval' || status == 'Unplanned') {
@@ -721,6 +793,8 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
               : '근무표와 다른 시간대 출근 요청: $name님',
         );
       }
+      
+      _finishClockIn(attendance, bannerMessage);
     } catch (e) {
       debugPrint('Clock-in fatal error: $e');
       String msg = '출근 처리 중 오류가 발생했습니다.';
@@ -744,7 +818,13 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      if (mounted && _isProcessing) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _isProcessing) {
+            setState(() => _isProcessing = false);
+          }
+        });
+      }
     }
   }
 
@@ -771,6 +851,58 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
       rosterDayDoc: rosterSnap.data(),
     );
     return shift?.scheduledEnd;
+  }
+
+
+  void _finishClockIn(Attendance attendance, String bannerMessage) {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _topBannerMessage = bannerMessage;
+        _currentOpenAttendance = attendance;
+        _isProcessing = false;
+      });
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (!mounted) return;
+        if (_topBannerMessage == bannerMessage) {
+          setState(() => _topBannerMessage = null);
+        }
+      });
+      Future.delayed(const Duration(milliseconds: 2000), () {
+        if (mounted) {
+          _loadOpenAttendance();
+          _loadWorkerData();
+          _loadDashboardData();
+        }
+      });
+    });
+  }
+
+  void _finishClockOut(String bannerMessage) {
+    if (!mounted) return;
+    // 현재 프레임 완료 후 원자적으로 상태 변경 (다이얼로그 오버레이 정리 대기)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _topBannerMessage = bannerMessage;
+        _currentOpenAttendance = null;
+        _isProcessing = false;
+      });
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (!mounted) return;
+        if (_topBannerMessage == bannerMessage) {
+          setState(() => _topBannerMessage = null);
+        }
+      });
+      Future.delayed(const Duration(milliseconds: 2000), () {
+        if (mounted) {
+          _loadOpenAttendance();
+          _loadWorkerData();
+          _loadDashboardData();
+        }
+      });
+    });
   }
 
   Future<void> _clockOut(Attendance open) async {
@@ -827,7 +959,7 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
           isAttendanceEquivalent: open.isAttendanceEquivalent,
           attendanceStatus: 'early_leave_pending',
           scheduledShiftStartIso: open.scheduledShiftStartIso,
-          scheduledShiftEndIso: open.scheduledShiftEndIso,
+          scheduledShiftEndIso: open.scheduledShiftEndIso ?? schedEnd.toIso8601String(),
           overtimeApproved: false,
           overtimeReason: open.overtimeReason,
         );
@@ -839,8 +971,7 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
           kind: 'early_clock_out_pending',
           message: '조기 퇴근 요청: $name님 (사유: $reason)',
         );
-        if (!mounted) return;
-        _showTopBanner('조기 퇴근 승인 요청이 접수되었습니다.');
+        _finishClockOut('조기 퇴근 승인 요청이 접수되었습니다.');
         return;
       }
 
@@ -877,7 +1008,7 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
             isAttendanceEquivalent: open.isAttendanceEquivalent,
             attendanceStatus: 'pending_overtime',
             scheduledShiftStartIso: open.scheduledShiftStartIso,
-            scheduledShiftEndIso: open.scheduledShiftEndIso,
+            scheduledShiftEndIso: open.scheduledShiftEndIso ?? schedEnd.toIso8601String(),
             overtimeApproved: false,
             overtimeReason: reason,
           );
@@ -889,8 +1020,7 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
             reason: reason,
             attendanceId: open.id,
           );
-          if (!mounted) return;
-          _showTopBanner('연장 근무 신청이 접수되었습니다.');
+          _finishClockOut('연장 근무 신청이 접수되었습니다.');
           return;
         } else {
           // 'personal' (개인 사유로 정시 퇴근 선택)
@@ -912,14 +1042,13 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
             isAttendanceEquivalent: open.isAttendanceEquivalent,
             attendanceStatus: open.attendanceStatus,
             scheduledShiftStartIso: open.scheduledShiftStartIso,
-            scheduledShiftEndIso: open.scheduledShiftEndIso,
+            scheduledShiftEndIso: open.scheduledShiftEndIso ?? schedEnd.toIso8601String(),
             overtimeApproved: false,
             voluntaryWaiverNote: '사용자가 자발적으로 연장 수당 미신청을 선택함 (개인 사유)',
             voluntaryWaiverLogAt: now,
           );
           await _dbService.recordAttendance(updated);
-          if (!mounted) return;
-          _showTopBanner('정시 퇴근(개인 사유 지연)으로 처리되었습니다.');
+          _finishClockOut('정시 퇴근(개인 사유 지연)으로 처리되었습니다.');
           return;
         }
       }
@@ -942,13 +1071,12 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
         isAttendanceEquivalent: open.isAttendanceEquivalent,
         attendanceStatus: open.attendanceStatus,
         scheduledShiftStartIso: open.scheduledShiftStartIso,
-        scheduledShiftEndIso: open.scheduledShiftEndIso,
+        scheduledShiftEndIso: open.scheduledShiftEndIso ?? schedEnd?.toIso8601String(),
         overtimeApproved: open.overtimeApproved,
         overtimeReason: open.overtimeReason,
       );
       await _dbService.recordAttendance(updated);
-      if (!mounted) return;
-      _showTopBanner('퇴근 처리되었습니다');
+      _finishClockOut('퇴근 처리되었습니다');
     } catch (e) {
       debugPrint('Clock-out fatal error: $e');
       String msg = '퇴근 처리 중 오류가 발생했습니다.';
@@ -968,7 +1096,14 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      // 다이얼로그 오버레이 정리가 끝난 후 안전하게 setState
+      if (mounted && _isProcessing) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _isProcessing) {
+            setState(() => _isProcessing = false);
+          }
+        });
+      }
     }
   }
 
@@ -1180,8 +1315,9 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
                   String finalReason = '';
                   if (selectedType == 'personal') {
                     finalReason = '[$durationStr 신청] 개인사유';
-                  } else if (selectedType == 'boss') finalReason = '[$durationStr 신청] 사장님 요청';
-                  else {
+                  } else if (selectedType == 'boss') {
+                    finalReason = '[$durationStr 신청] 사장님 요청';
+                  } else {
                     final t = controller.text.trim();
                     if (t.isEmpty) {
                       ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('상세 사유를 입력해 주세요.')));
@@ -1241,754 +1377,455 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
         ? worker['name'].toString().trim()
         : '알바';
 
-    return FutureBuilder<Attendance?>(
-      future: _openAttendanceFuture(),
-      builder: (context, openSnap) {
-        final open = openSnap.data;
-        final isClockedIn = open != null;
+    final open = _currentOpenAttendance;
+    final isClockedIn = open != null;
 
-        return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          future: _dbService.getWorkerRosterDays(widget.storeId, _workerId),
-          builder: (context, rosterSnap) {
-            final rosterMap = <String, Map<String, dynamic>>{};
-            for (final d in rosterSnap.data?.docs ?? []) {
-              rosterMap[d.id] = d.data();
-            }
-            final today = AppClock.now();
-            final shiftToday = effectiveShiftForDate(
-              worker: worker,
-              date: today,
-              rosterDayDoc: rosterMap[rosterDateKey(today)],
-            );
-            final hasShiftToday = shiftToday != null;
-            final scheduleLine = shiftToday == null
-                ? '오늘은 계약상 휴무입니다. (출근 기록은 가능)'
-                : '오늘 스케줄 · ${shiftToday.checkInHm} ~ ${shiftToday.checkOutHm}';
-            final contractSub = shiftToday == null
-                ? _todayContractLabel(worker)
-                : '오늘 계약 근무: ${shiftToday.checkInHm} ~ ${shiftToday.checkOutHm}';
+    // 로스터 데이터
+    final today = AppClock.now();
+    final shiftToday = effectiveShiftForDate(
+      worker: worker,
+      date: today,
+      rosterDayDoc: _rosterData[rosterDateKey(today)],
+    );
+    final hasShiftToday = shiftToday != null;
+    final scheduleLine = shiftToday == null
+        ? '오늘은 계약상 휴무입니다. (출근 기록은 가능)'
+        : '오늘 스케줄 · ${shiftToday.checkInHm} ~ ${shiftToday.checkOutHm}';
+    final contractSub = shiftToday == null
+        ? _todayContractLabel(worker)
+        : '오늘 계약 근무: ${shiftToday.checkInHm} ~ ${shiftToday.checkOutHm}';
 
-            return SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+    // 금주 근무시간
+    final weekly = _weeklyData;
+    final hours = ComplianceEngine.calculateWeeklyHours(weekly);
+    final progress = (hours / 52.0).clamp(0.0, 1.0);
+    Color progressColor = const Color(0xFF1565C0);
+    String statusText = '정상 준수 중';
+    if (hours >= 51.5) {
+      progressColor = Colors.red;
+      statusText = '한도 도달 (차단)';
+    } else if (hours >= 48) {
+      progressColor = Colors.orange;
+      statusText = '한도 임박 (주의)';
+    } else if (hours > 40) {
+      progressColor = Colors.blue;
+      statusText = '연장 수당 발생';
+    }
+
+    // 실시간 근무 시간
+    final mList = _monthlyData;
+    final now = AppClock.now();
+    final todayYmd = rosterDateKey(now);
+    final todayFinished = mList.where((a) {
+      if (a.clockOut == null) return false;
+      return rosterDateKey(a.clockIn) == todayYmd;
+    });
+    int finishedMinutes = todayFinished.fold(0, (total, a) => total + a.workedMinutes);
+    int currentSessionMinutes = isClockedIn ? (open.workedMinutesAt(now)) : 0;
+    int totalTodayMinutes = finishedMinutes + currentSessionMinutes;
+
+    String formatMin(int total) {
+      final h = total ~/ 60;
+      final m = total % 60;
+      return '$h시간 ${m.toString().padLeft(2, '0')}분';
+    }
+
+    // 공지사항 정렬
+    final allNotices = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(_noticesData);
+    allNotices.sort((a, b) {
+      final ta = a.data()['createdAt'] as Timestamp?;
+      final tb = b.data()['createdAt'] as Timestamp?;
+      if (ta == null && tb == null) return 0;
+      if (ta == null) return 1;
+      if (tb == null) return -1;
+      return tb.compareTo(ta);
+    });
+    final previewNotices = allNotices.take(3).toList();
+
+    // 유통기한
+    final expirationDocs = _expirationsTodayData;
+
+    // 전달사항
+    final tdocs = _incompleteTodosData;
+    final todoListHeight = tdocs.isEmpty
+        ? 44.0
+        : (tdocs.length * 34.0 + 8).clamp(48.0, 220.0);
+
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '반가워요, $name님!',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF1B1B1B),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const AlbaSettingsScreen()));
-                        },
-                        icon: const Icon(Icons.settings_outlined, color: Colors.black87),
-                      ),
-                    ],
-                  ),
-                  const Text(
-                    '오늘도 화이팅하세요.',
-                    style: TextStyle(fontSize: 13, color: Colors.black54),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 금주 근로 시간 현황 (52시간 가드)
-                  FutureBuilder<List<Attendance>>(
-                    future: _weeklyAttendanceFuture(),
-                    builder: (ctx, snap) {
-                      final weekly = snap.data ?? [];
-                      final hours = ComplianceEngine.calculateWeeklyHours(weekly);
-                      final progress = (hours / 52.0).clamp(0.0, 1.0);
-                      
-                      Color progressColor = const Color(0xFF1565C0);
-                      String statusText = '정상 준수 중';
-                      
-                      if (hours >= 51.5) {
-                        progressColor = Colors.red;
-                        statusText = '한도 도달 (차단)';
-                      } else if (hours >= 48) {
-                        progressColor = Colors.orange;
-                        statusText = '한도 임박 (주의)';
-                      } else if (hours > 40) {
-                        progressColor = Colors.blue;
-                        statusText = '연장 수당 발생';
-                      }
-
-                      return _dashCard(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('금주 누적 근로시간', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: progressColor.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    statusText,
-                                    style: TextStyle(fontSize: 10, color: progressColor, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: progress,
-                                backgroundColor: Colors.grey.shade100,
-                                color: progressColor,
-                                minHeight: 6,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  '${hours.toStringAsFixed(1)}시간',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                                ),
-                                const Text('한도 52.0h', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
+                  Text('반가워요, $name님!', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF1B1B1B))),
+                  IconButton(
+                    onPressed: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => AlbaSettingsScreen(storeId: widget.storeId, workerId: _workerId)));
                     },
+                    icon: const Icon(Icons.settings_outlined, color: Colors.black87),
                   ),
+                ],
+              ),
+              const Text('오늘도 화이팅하세요.', style: TextStyle(fontSize: 13, color: Colors.black54)),
+              const SizedBox(height: 16),
 
-                  // 1) 근무 — 스케줄 + 출근/퇴근
-                  _dashCard(
-                    margin: EdgeInsets.zero,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              // 금주 근로 시간 현황
+              _dashCard(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.schedule_rounded,
-                              color: hasShiftToday ? const Color(0xFF1565C0) : Colors.black45,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 6),
-                            const Text(
-                              '근무',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          scheduleLine,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: hasShiftToday ? Colors.black87 : Colors.black54,
-                          ),
-                        ),
-                        Text(
-                          contractSub,
-                          style: const TextStyle(fontSize: 11, color: Colors.black54),
-                        ),
-                        const SizedBox(height: 14),
-
-                        // --- 실시간 근무 시간 표시 (FutureBuilder on Web) ---
-                        FutureBuilder<List<Attendance>>(
-                          future: _monthlyAttendanceFuture(),
-                          builder: (context, mSnap) {
-                            if (mSnap.hasError) {
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                child: Text('⚠️ 데이터 로드 오류: ${mSnap.error}',
-                                    style: const TextStyle(fontSize: 10, color: Colors.red)),
-                              );
-                            }
-                            if (mSnap.connectionState == ConnectionState.waiting && !mSnap.hasData) {
-                              return const SizedBox(
-                                height: 50,
-                                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                              );
-                            }
-                            
-                            final mList = mSnap.data ?? [];
-                            final now = AppClock.now();
-                            final todayYmd = rosterDateKey(now);
-                            
-                            // 오늘 완료된 세션들
-                            final todayFinished = mList.where((a) {
-                              if (a.clockOut == null) return false;
-                              return rosterDateKey(a.clockIn) == todayYmd;
-                            });
-                            int finishedMinutes = todayFinished.fold(0, (total, a) => total + a.workedMinutes);
-
-                            // 현재 진행 중인 세션
-                            int currentSessionMinutes = isClockedIn ? (open.workedMinutesAt(now)) : 0;
-                            int totalTodayMinutes = finishedMinutes + currentSessionMinutes;
-
-                            String format(int total) {
-                              final h = total ~/ 60;
-                              final m = total % 60;
-                              return '$h시간 ${m.toString().padLeft(2, '0')}분';
-                            }
-
-                            return Container(
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF5F7FA),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text(
-                                        '실제 근무 시간',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.black54,
-                                        ),
-                                      ),
-                                      if (isClockedIn)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFE8F5E9),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: const Text(
-                                            '기록 중',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w800,
-                                              color: Color(0xFF2E7D32),
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  if (isClockedIn) ...[
-                                    Text(
-                                      '현재 ${format(currentSessionMinutes)}째 근무 중',
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w800,
-                                        color: Color(0xFF1565C0),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '오늘 총 ${format(totalTodayMinutes)}',
-                                      style: const TextStyle(fontSize: 12, color: Colors.black87),
-                                    ),
-                                  ] else ...[
-                                    Text(
-                                      totalTodayMinutes > 0
-                                          ? '오늘 총 ${format(totalTodayMinutes)} 근무함'
-                                          : '오늘 근무 기록이 없습니다.',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: totalTodayMinutes > 0 ? Colors.black87 : Colors.black45,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            );
-                          },
+                        const Text('금주 누적 근로시간', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: progressColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+                          child: Text(statusText, style: TextStyle(fontSize: 10, color: progressColor, fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 24),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(value: progress, backgroundColor: Colors.grey.shade100, color: progressColor, minHeight: 6),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(PayrollCalculator.formatHoursAsKorean(hours), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                        const Text('한도 52.0h', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
 
-                  // --- 거대한 중앙 출퇴근 버튼 ---
-                  Center(
-                    child: isClockedIn
-                        ? Column(
-                            mainAxisSize: MainAxisSize.min,
+              // 1) 근무
+              _dashCard(
+                margin: EdgeInsets.zero,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(Icons.schedule_rounded, color: hasShiftToday ? const Color(0xFF1565C0) : Colors.black45, size: 20),
+                      const SizedBox(width: 6),
+                      const Text('근무', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                    ]),
+                    const SizedBox(height: 8),
+                    Text(scheduleLine, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: hasShiftToday ? Colors.black87 : Colors.black54)),
+                    Text(contractSub, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                    const SizedBox(height: 14),
+
+                    // 실시간 근무 시간 표시
+                    Container(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F7FA),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              SizedBox(
-                                width: 220,
-                                height: 80,
-                                child: FilledButton.icon(
-                                  onPressed: () async => _clockOut(open),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFFC62828),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(40),
-                                    ),
-                                    elevation: 8,
-                                    shadowColor: const Color(0xFFC62828).withValues(alpha: 0.4),
-                                  ),
-                                  icon: const Icon(Icons.stop_circle_outlined, size: 28),
-                                  label: const Text(
-                                    '지금 퇴근하기',
-                                    style: TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1.2,
-                                    ),
-                                  ),
+                              const Text('실제 근무 시간', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.black54)),
+                              if (isClockedIn)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(color: const Color(0xFFE8F5E9), borderRadius: BorderRadius.circular(4)),
+                                  child: const Text('기록 중', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF2E7D32))),
                                 ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                '퇴근 시각이 즉시 기록됩니다.',
-                                style: TextStyle(fontSize: 13, color: Colors.black54),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_isEntryLandingLink)
-                                const Padding(
-                                  padding: EdgeInsets.only(bottom: 12),
-                                  child: Text(
-                                    '출근 링크 접속 시 자동 출근됩니다. (수동 출근 가능)',
-                                    style: TextStyle(fontSize: 13, color: Colors.black54),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              SizedBox(
-                                width: 220,
-                                height: 80,
-                                child: FilledButton.icon(
-                                  onPressed: () async => _clockIn(worker),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF1565C0),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(40),
-                                    ),
-                                    elevation: 8,
-                                    shadowColor: const Color(0xFF1565C0).withValues(alpha: 0.4),
-                                  ),
-                                  icon: const Icon(Icons.play_circle_fill, size: 28),
-                                  label: const Text(
-                                    '출근하기',
-                                    style: TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1.2,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                '출근 시각이 즉시 기록됩니다.',
-                                style: TextStyle(fontSize: 13, color: Colors.black54),
-                              ),
                             ],
                           ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 2) 공지사항 (FutureBuilder for Web stability)
-                  FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        future: _db
-                            .collection('stores')
-                            .doc(widget.storeId)
-                            .collection('notices')
-                            .get(),
-                        builder: (context, nSnap) {
-                          if (nSnap.connectionState == ConnectionState.waiting) {
-                            return _dashCard(
-                              margin: EdgeInsets.zero,
-                              child: const Row(
-                                children: [
-                                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
-                                  SizedBox(width: 12),
-                                  Text('공지 불러오는 중...', style: TextStyle(fontSize: 13, color: Colors.black54)),
-                                ],
-                              ),
-                            );
-                          }
-                          if (nSnap.hasError) {
-                            return _dashCard(
-                              margin: EdgeInsets.zero,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '공지를 불러오지 못했습니다.',
-                                    style: TextStyle(color: Colors.red.shade700, fontSize: 13, fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${nSnap.error}',
-                                    style: TextStyle(color: Colors.red.shade400, fontSize: 11),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'ID: ${widget.storeId} / ${_workerId.substring(0, 4)}',
-                                    style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                          final allDocs = nSnap.data?.docs ?? [];
-                          if (allDocs.isEmpty) {
-                            return _dashCard(
-                              margin: EdgeInsets.zero,
-                              child: const Row(
-                                children: [
-                                  Icon(Icons.campaign_outlined, size: 18, color: Colors.black45),
-                                  SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      '등록된 공지가 없습니다.',
-                                      style: TextStyle(fontSize: 13, color: Colors.black54),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-
-                          // Sort in memory
-                          final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(allDocs);
-                          sortedDocs.sort((a, b) {
-                            final ta = a.data()['createdAt'] as Timestamp?;
-                            final tb = b.data()['createdAt'] as Timestamp?;
-                            if (ta == null && tb == null) return 0;
-                            if (ta == null) return 1;
-                            if (tb == null) return -1;
-                            return tb.compareTo(ta); // Descending
-                          });
-
-                          final doc = sortedDocs.first;
-                          final d = doc.data();
-                          final title = d['title']?.toString() ?? '공지';
-                          final oneLine =
-                              title.length > 40 ? '${title.substring(0, 37)}…' : title;
-                          return InkWell(
-                            onTap: () {
-                              setState(() {
-                                _index = 3; // 공지/업무 탭
-                                _subIndex = 0;
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(15),
-                            child: _dashCard(
-                              margin: EdgeInsets.zero,
-                              child: Column(
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(Icons.campaign_rounded, size: 18, color: Colors.blue.shade700),
-                                      const SizedBox(width: 6),
-                                      const Text(
-                                        '공지사항',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      const Icon(Icons.chevron_right, size: 18, color: Colors.black45),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                FutureBuilder<DocumentSnapshot>(
-                                  future: _db
-                                      .collection('stores')
-                                      .doc(widget.storeId)
-                                      .collection('notices')
-                                      .doc(doc.id)
-                                      .collection('reads')
-                                      .doc(_workerId)
-                                      .get(),
-                                  builder: (context, rSnap) {
-                                    final isRead = rSnap.hasData && rSnap.data!.exists;
-                                    return InkWell(
-                                      onTap: () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute<void>(
-                                            builder: (_) => NoticeDetailScreen(
-                                              storeId: widget.storeId,
-                                              noticeId: doc.id,
-                                              workerId: _workerId,
-                                              workerName: worker['name']?.toString() ?? '알바',
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: isRead ? Colors.grey.shade50 : const Color(0xFFE3F2FD),
-                                          borderRadius: BorderRadius.circular(10),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                oneLine,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight: isRead ? FontWeight.w500 : FontWeight.bold,
-                                                  color: isRead ? Colors.black54 : Colors.black87,
-                                                ),
-                                              ),
-                                            ),
-                                            if (!isRead)
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.red,
-                                                  borderRadius: BorderRadius.circular(4),
-                                                ),
-                                                child: const Text(
-                                                  'N',
-                                                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                                                ),
-                                              ),
-                                            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
+                          const SizedBox(height: 6),
+                          if (isClockedIn) ...[
+                            Text('현재 ${formatMin(currentSessionMinutes)}째 근무 중', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF1565C0))),
+                            const SizedBox(height: 2),
+                            Text('오늘 총 ${formatMin(totalTodayMinutes)}', style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                          ] else ...[
+                            Text(
+                              totalTodayMinutes > 0 ? '오늘 총 ${formatMin(totalTodayMinutes)} 근무함' : '오늘 근무 기록이 없습니다.',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: totalTodayMinutes > 0 ? Colors.black87 : Colors.black45),
                             ),
-                          ));
-                        },
+                          ],
+                        ],
                       ),
-                  const SizedBox(height: 6),
-
-                  // 3) 유통기한 알림
-                  FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-                        future: _expirationsTodayFuture(),
-                        builder: (context, expSnap) {
-                          final docs = expSnap.data ?? [];
-                          return InkWell(
-                            onTap: () => setState(() {
-                              _index = 3;
-                              _subIndex = 2; // 유통기한 탭
-                            }),
-                            borderRadius: BorderRadius.circular(15),
-                            child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(15),
-                              gradient: const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [Color(0xFFFFF3E0), Color(0xFFFFFFFF)],
-                              ),
-                              border: Border.all(color: const Color(0xFFE65100), width: 2),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.08),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(5),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFFE0B2),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.warning_amber_rounded,
-                                        color: Color(0xFFF9A825),
-                                        size: 18,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Expanded(
-                                      child: Text(
-                                        '유통기한 알림',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w900,
-                                          color: Color(0xFFBF360C),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                expSnap.hasError
-                                    ? Text(
-                                        '불러오기 실패',
-                                        style: TextStyle(color: Colors.red.shade700, fontSize: 12),
-                                      )
-                                    : docs.isEmpty
-                                        ? const Text(
-                                            '오늘 마감 품목이 없습니다.',
-                                            style: TextStyle(fontSize: 12, color: Colors.black54),
-                                          )
-                                        : ListView.builder(
-                                            shrinkWrap: true,
-                                            physics: const NeverScrollableScrollPhysics(),
-                                            itemCount: docs.length.clamp(0, 5),
-                                            itemBuilder: (_, i) {
-                                              final line = _expirationLine(docs[i].data());
-                                              return Padding(
-                                                padding: const EdgeInsets.only(bottom: 3),
-                                                child: Text(
-                                                  '· $line',
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                              ],
-                            ),
-                          ));
-                        },
-                      ),
-                  const SizedBox(height: 6),
-
-                  // 4) 전달사항 (기존: 오늘의 할 일)
-                  FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-                        future: _incompleteTodosFuture(),
-                        builder: (context, tSnap) {
-                          final tdocs = tSnap.data ?? [];
-                          final todoListHeight = tdocs.isEmpty
-                              ? 44.0
-                              : (tdocs.length * 34.0 + 8).clamp(48.0, 220.0);
-                          return InkWell(
-                            onTap: () => setState(() {
-                              _index = 3;
-                              _subIndex = 1; // 전달사항 탭
-                            }),
-                            borderRadius: BorderRadius.circular(15),
-                            child: _dashCard(
-                            margin: EdgeInsets.zero,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.checklist_rounded, size: 18, color: Colors.green.shade800),
-                                    const SizedBox(width: 6),
-                                    const Text(
-                                      '전달사항',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    TextButton(
-                                      onPressed: () => _showAddMessageDialog(worker),
-                                      style: TextButton.styleFrom(
-                                        padding: EdgeInsets.zero,
-                                        minimumSize: const Size(60, 30),
-                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                      child: const Text('+ 남기기', style: TextStyle(fontSize: 12)),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                SizedBox(
-                                  height: todoListHeight,
-                                  width: double.infinity,
-                                  child: tdocs.isEmpty
-                                      ? const Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: Text(
-                                            '등록된 전달사항이 없습니다.',
-                                            style: TextStyle(fontSize: 12, color: Colors.black54),
-                                          ),
-                                        )
-                                      : ListView.builder(
-                                          physics: const ClampingScrollPhysics(),
-                                          itemCount: tdocs.length,
-                                          itemBuilder: (_, i) {
-                                            final doc = tdocs[i];
-                                            final title =
-                                                doc.data()['title']?.toString() ?? '할 일';
-                                            return InkWell(
-                                              onTap: () => _markTodoDone(doc.id),
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(vertical: 2),
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.radio_button_unchecked,
-                                                      size: 16,
-                                                      color: Colors.grey.shade600,
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    Expanded(
-                                                      child: Text(
-                                                        title,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: const TextStyle(fontSize: 12),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                ),
-                              ],
-                            ),
-                          ));
-                        },
-                      ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-            ),
+              const SizedBox(height: 24),
+
+              // --- 중앙 출퇴근 버튼 ---
+              Center(
+                child: isClockedIn
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 220, height: 80,
+                            child: FilledButton.icon(
+                              onPressed: () async => _clockOut(open),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFC62828), foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(40)),
+                                elevation: 8, shadowColor: const Color(0xFFC62828).withValues(alpha: 0.4),
+                              ),
+                              icon: const Icon(Icons.stop_circle_outlined, size: 28),
+                              label: const Text('지금 퇴근하기', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text('퇴근 시각이 즉시 기록됩니다.', style: TextStyle(fontSize: 13, color: Colors.black54)),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_isEntryLandingLink)
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 12),
+                              child: Text('출근 링크 접속 시 자동 출근됩니다. (수동 출근 가능)', style: TextStyle(fontSize: 13, color: Colors.black54), textAlign: TextAlign.center),
+                            ),
+                          SizedBox(
+                            width: 220, height: 80,
+                            child: FilledButton.icon(
+                              onPressed: () async => _clockIn(worker),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF1565C0), foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(40)),
+                                elevation: 8, shadowColor: const Color(0xFF1565C0).withValues(alpha: 0.4),
+                              ),
+                              icon: const Icon(Icons.play_circle_fill, size: 28),
+                              label: const Text('출근하기', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text('출근 시각이 즉시 기록됩니다.', style: TextStyle(fontSize: 13, color: Colors.black54)),
+                        ],
+                      ),
+              ),
+              const SizedBox(height: 16),
+
+              // 2) 공지사항
+              if (allNotices.isEmpty)
+                _dashCard(
+                  margin: EdgeInsets.zero,
+                  child: const Row(children: [
+                    Icon(Icons.campaign_outlined, size: 18, color: Colors.black45),
+                    SizedBox(width: 6),
+                    Expanded(child: Text('등록된 공지가 없습니다.', style: TextStyle(fontSize: 13, color: Colors.black54))),
+                  ]),
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ...previewNotices.map((doc) {
+                      final d = doc.data();
+                      final title = d['title']?.toString() ?? '공지';
+                      final content = d['content']?.toString() ?? '';
+                      final imageUrl = d['imageUrl']?.toString() ?? '';
+                      final createdAt = d['createdAt'];
+                      String dateText = '';
+                      if (createdAt is Timestamp) {
+                        final dt = createdAt.toDate();
+                        dateText = '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}';
+                      }
+                      return FutureBuilder<DocumentSnapshot>(
+                        future: _db.collection('stores').doc(widget.storeId).collection('notices').doc(doc.id).collection('reads').doc(_workerId).get(),
+                        builder: (context, rSnap) {
+                          final isRead = rSnap.hasData && rSnap.data!.exists;
+                          bool isExpanded = false;
+                          return StatefulBuilder(
+                            builder: (context, setItemState) {
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white, borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey.shade200),
+                                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))],
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: InkWell(
+                                  onTap: () async {
+                                    if (!isRead) {
+                                      await _db.collection('stores').doc(widget.storeId).collection('notices').doc(doc.id).collection('reads').doc(_workerId).set({'readAt': FieldValue.serverTimestamp()});
+                                      if (mounted) setState((){});
+                                    }
+                                    setItemState(() => isExpanded = !isExpanded);
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                            Row(children: [
+                                              Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)), child: Text('공지', style: TextStyle(color: Colors.blue.shade700, fontSize: 11, fontWeight: FontWeight.bold))),
+                                              if (!isRead) Container(margin: const EdgeInsets.only(left: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(4)), child: const Text('N', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+                                            ]),
+                                            const SizedBox(height: 8),
+                                            Text(title, style: TextStyle(fontWeight: isRead ? FontWeight.w500 : FontWeight.w800, fontSize: 15, color: Colors.black87), maxLines: isExpanded ? null : 2, overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis),
+                                            const SizedBox(height: 8),
+                                            Text(dateText, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+                                          ])),
+                                          if (imageUrl.isNotEmpty) ...[
+                                            const SizedBox(width: 16),
+                                            ClipRRect(borderRadius: BorderRadius.circular(8), child: R2Image(storeId: widget.storeId, imagePathOrId: imageUrl, width: 60, height: 60, fit: BoxFit.cover)),
+                                          ]
+                                        ]),
+                                        if (isExpanded) ...[
+                                          const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
+                                          Text(content, style: const TextStyle(fontSize: 14, height: 1.5, color: Colors.black87)),
+                                          if (imageUrl.isNotEmpty) ...[
+                                            const SizedBox(height: 12),
+                                            ClipRRect(borderRadius: BorderRadius.circular(8), child: R2Image(storeId: widget.storeId, imagePathOrId: imageUrl, fit: BoxFit.contain, width: double.infinity)),
+                                          ],
+                                          const SizedBox(height: 8),
+                                          Align(alignment: Alignment.centerRight, child: TextButton(
+                                            onPressed: () async {
+                                              await Navigator.push(context, MaterialPageRoute(builder: (_) => NoticeDetailScreen(storeId: widget.storeId, noticeId: doc.id, workerId: _workerId, workerName: worker['name'] ?? '알바')));
+                                              if (mounted) setState((){});
+                                            },
+                                            style: TextButton.styleFrom(foregroundColor: Colors.blue.shade700, textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                            child: const Text('전체화면에서 보기 >'),
+                                          ))
+                                        ]
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                          );
+                        }
+                      );
+                    }),
+                    const SizedBox(height: 4),
+                    InkWell(
+                      onTap: () => setState(() { _index = 3; _subIndex = 0; }),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
+                        alignment: Alignment.center,
+                        child: const Text('공지사항 전체보기  >', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87)),
+                      ),
+                    ),
+                  ]
+                ),
+              const SizedBox(height: 6),
+
+              // 3) 유통기한 알림
+              InkWell(
+                onTap: () => setState(() { _index = 3; _subIndex = 2; }),
+                borderRadius: BorderRadius.circular(15),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(15),
+                    gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFF3E0), Color(0xFFFFFFFF)]),
+                    border: Border.all(color: const Color(0xFFE65100), width: 2),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 10, offset: const Offset(0, 2))],
+                  ),
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Container(padding: const EdgeInsets.all(5), decoration: BoxDecoration(color: const Color(0xFFFFE0B2), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFF9A825), size: 18)),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text('유통기한 알림', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFFBF360C)))),
+                      ]),
+                      const SizedBox(height: 6),
+                      expirationDocs.isEmpty
+                          ? const Text('오늘 마감 품목이 없습니다.', style: TextStyle(fontSize: 12, color: Colors.black54))
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: expirationDocs.length.clamp(0, 5),
+                              itemBuilder: (_, i) {
+                                final line = _expirationLine(expirationDocs[i].data());
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 3),
+                                  child: Text('· $line', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                );
+                              },
+                            ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+
+              // 4) 전달사항
+              InkWell(
+                onTap: () => setState(() { _index = 3; _subIndex = 1; }),
+                borderRadius: BorderRadius.circular(15),
+                child: _dashCard(
+                  margin: EdgeInsets.zero,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(Icons.checklist_rounded, size: 18, color: Colors.green.shade800),
+                        const SizedBox(width: 6),
+                        const Text('전달사항', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => _showAddMessageDialog(worker),
+                          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(60, 30), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          child: const Text('+ 남기기', style: TextStyle(fontSize: 12)),
+                        ),
+                      ]),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: todoListHeight,
+                        width: double.infinity,
+                        child: tdocs.isEmpty
+                            ? const Align(alignment: Alignment.centerLeft, child: Text('등록된 전달사항이 없습니다.', style: TextStyle(fontSize: 12, color: Colors.black54)))
+                            : ListView.builder(
+                                physics: const ClampingScrollPhysics(),
+                                itemCount: tdocs.length,
+                                itemBuilder: (_, i) {
+                                  final doc = tdocs[i];
+                                  final title = doc.data()['title']?.toString() ?? '할 일';
+                                  return InkWell(
+                                    onTap: () => _markTodoDone(doc.id),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 2),
+                                      child: Row(children: [
+                                        Icon(Icons.radio_button_unchecked, size: 16, color: Colors.grey.shade600),
+                                        const SizedBox(width: 6),
+                                        Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))),
+                                      ]),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        );
-          },
-        );
-      },
+        ),
+      ),
     );
   }
-
 
 
   @override
@@ -1996,13 +1833,10 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
     if (_uid.isEmpty) {
       return const Scaffold(body: Center(child: Text('로그인이 필요합니다.')));
     }
-    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      future: _workerFuture(),
-      builder: (context, workerSnap) {
-        if (workerSnap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-        final worker = workerSnap.data?.data() ?? const <String, dynamic>{};
+    if (_isInitialLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final worker = _workerData;
         final pages = <Widget>[
           _homeDashboard(worker),
           AlbaSchedulePage(storeId: widget.storeId, workerId: _workerId),
@@ -2039,7 +1873,7 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
                     IconButton(
                       icon: const Icon(Icons.settings_outlined),
                       onPressed: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const AlbaSettingsScreen()));
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => AlbaSettingsScreen(storeId: widget.storeId, workerId: _workerId)));
                       },
                     ),
                   ],
@@ -2133,7 +1967,5 @@ class _AlbaMainScreenState extends State<AlbaMainScreen> {
             ],
           ),
         );
-      },
-    );
   }
-} // End of class _AlbaMainScreenState
+}

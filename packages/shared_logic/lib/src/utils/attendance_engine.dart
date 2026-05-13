@@ -17,8 +17,11 @@ class AttendanceEngine {
       );
     }
 
-    final diff = actualTime.difference(scheduledShift.startTime).inMinutes.abs();
-    
+    final diff = actualTime
+        .difference(scheduledShift.startTime)
+        .inMinutes
+        .abs();
+
     if (diff <= store.attendanceGracePeriodMinutes) {
       // Within grace period: normalize to scheduled start time
       return AttendanceResult(

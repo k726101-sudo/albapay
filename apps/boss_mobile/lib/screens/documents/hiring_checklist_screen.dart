@@ -125,8 +125,17 @@ class _HiringChecklistScreenState extends State<HiringChecklistScreen> {
       final data = {
         'checked': _checked,
         'signDate': _signDate.toIso8601String(),
-        'signatureBase64': ?sigBase64,
+        if (sigBase64 != null) 'signatureBase64': sigBase64,
       };
+
+      final newDataJson = jsonEncode(data);
+      final newHash = SecurityMetadataHelper.generateDocumentHash(
+        type: widget.document.type.name,
+        staffId: widget.document.staffId,
+        content: widget.document.content,
+        dataJson: newDataJson,
+        createdAt: widget.document.createdAt.toIso8601String(),
+      );
 
       await FirebaseFirestore.instance
           .collection('stores')
@@ -136,7 +145,8 @@ class _HiringChecklistScreenState extends State<HiringChecklistScreen> {
           .set({
         ...widget.document.toMap(),
         'status': 'completed',
-        'dataJson': jsonEncode(data),
+        'dataJson': newDataJson,
+        'documentHash': newHash,
       }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('Failed to save document status: $e');
@@ -632,13 +642,43 @@ class _HiringChecklistScreenState extends State<HiringChecklistScreen> {
   }
 
   Widget _buildConsentList() {
-    return Column(
-      children: _consentItems.asMap().entries.map((e) {
-        final index = e.key;
-        final text = e.value;
-        final isChecked = _checked[index];
+    List<Widget> children = [];
+    
+    for (int i = 0; i < _consentItems.length; i++) {
+      if (i == 0) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 12),
+            child: Row(
+              children: [
+                const Icon(Icons.storefront, size: 18, color: Color(0xFF1A1A2E)),
+                const SizedBox(width: 6),
+                const Text('사장님(사용자) 확인 사항', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E))),
+              ],
+            ),
+          )
+        );
+      } else if (i == 3) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 24, bottom: 12),
+            child: Row(
+              children: [
+                Icon(Icons.person_outline, size: 18, color: Colors.orange.shade800),
+                const SizedBox(width: 6),
+                Text('직원(근로자) 동의 사항', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.orange.shade800)),
+              ],
+            ),
+          )
+        );
+      }
+      
+      final index = i;
+      final text = _consentItems[i];
+      final isChecked = _checked[index];
 
-        return GestureDetector(
+      children.add(
+        GestureDetector(
           onTap: () => setState(() => _checked[index] = !_checked[index]),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
@@ -696,8 +736,10 @@ class _HiringChecklistScreenState extends State<HiringChecklistScreen> {
               ],
             ),
           ),
-        );
-      }).toList(),
-    );
+        )
+      );
+    }
+    
+    return Column(children: children);
   }
 }

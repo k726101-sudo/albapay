@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_logic/shared_logic.dart';
 import 'notice_detail_screen.dart';
+import '../../widgets/full_screen_image_viewer.dart';
 
 class NoticeListScreen extends StatefulWidget {
   const NoticeListScreen({
@@ -116,6 +118,8 @@ class _NoticeListScreenState extends State<NoticeListScreen> {
               final doc = docs[index];
               final d = doc.data();
               final title = (d['title'] ?? '') as String;
+              final content = (d['content'] ?? '') as String;
+              final imageUrl = (d['imageUrl'] ?? '') as String;
               final createdAt = d['createdAt'];
 
               String dateText = '';
@@ -125,67 +129,173 @@ class _NoticeListScreenState extends State<NoticeListScreen> {
               }
 
               final isRead = _isRead(doc.id);
+              bool isExpanded = false;
 
-              return Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+              return StatefulBuilder(
+                builder: (context, setItemState) {
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  title: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            fontWeight: isRead ? FontWeight.w500 : FontWeight.bold,
-                            color: isRead ? Colors.black54 : Colors.black87,
-                          ),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () async {
+                        // Mark as read
+                        if (!isRead) {
+                           await _prefs!.setString('read_notice_${widget.workerId}_${doc.id}', DateTime.now().toIso8601String());
+                           if (mounted) setState(() {});
+                        }
+
+                        // 펼치거나 전체화면 (내용이 길어도 일단 펼쳐지게 하고 상세보기 버튼을 제공)
+                        setItemState(() {
+                          isExpanded = !isExpanded;
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade50,
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              '공지',
+                                              style: TextStyle(
+                                                color: Colors.blue.shade700,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          if (!isRead)
+                                            Container(
+                                              margin: const EdgeInsets.only(left: 6),
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.red,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Text('N', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        title,
+                                        style: TextStyle(
+                                          fontWeight: isRead ? FontWeight.w500 : FontWeight.w800,
+                                          fontSize: 15,
+                                          color: Colors.black87,
+                                        ),
+                                        maxLines: isExpanded ? null : 2,
+                                        overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        dateText,
+                                        style: const TextStyle(fontSize: 12, color: Colors.black45),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (imageUrl.isNotEmpty) ...[
+                                  const SizedBox(width: 16),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: R2Image(
+                                      storeId: widget.storeId,
+                                      imagePathOrId: imageUrl,
+                                      width: 60,
+                                      height: 60,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ]
+                              ],
+                            ),
+                            if (isExpanded) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 12),
+                                child: Divider(height: 1),
+                              ),
+                              Text(content, style: const TextStyle(fontSize: 14, height: 1.5, color: Colors.black87)),
+                              if (imageUrl.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => FullScreenImageViewer(imageUrl: imageUrl, storeId: widget.storeId),
+                                        ),
+                                      );
+                                    },
+                                    child: R2Image(
+                                      storeId: widget.storeId,
+                                      imagePathOrId: imageUrl,
+                                      fit: BoxFit.contain,
+                                      width: double.infinity,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: () async {
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => NoticeDetailScreen(
+                                          storeId: widget.storeId,
+                                          noticeId: doc.id,
+                                          workerId: widget.workerId,
+                                          workerName: widget.workerName,
+                                        ),
+                                      ),
+                                    );
+                                    if (mounted) setState((){});
+                                  },
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.blue.shade700,
+                                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                  ),
+                                  child: const Text('전체화면에서 보기 >'),
+                                )
+                              )
+                            ]
+                          ],
                         ),
                       ),
-                      if (!isRead)
-                        Container(
-                          margin: const EdgeInsets.only(left: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'N',
-                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                    ],
-                  ),
-                  subtitle: Text(dateText, style: const TextStyle(fontSize: 12)),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => NoticeDetailScreen(
-                          storeId: widget.storeId,
-                          noticeId: doc.id,
-                          workerId: widget.workerId,
-                          workerName: widget.workerName,
-                        ),
-                      ),
-                    );
-                    // Refresh read status when coming back
-                    if (mounted) {
-                      setState(() {});
-                    }
-                  },
-                ),
+                    ),
+                  );
+                }
               );
             },
           );

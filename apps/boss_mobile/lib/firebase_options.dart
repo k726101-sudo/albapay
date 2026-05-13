@@ -17,10 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -65,5 +62,15 @@ class DefaultFirebaseOptions {
     storageBucket: 'standard-albapay.firebasestorage.app',
     iosClientId: '824353133931-dl9i2ta3dlbsff5cthcsv1vj1h67gqrp.apps.googleusercontent.com',
     iosBundleId: 'com.standard.albapay',
+  );
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyBlADFvi9QCuBIfrkMGzw9MIbggeCbLYhM',
+    appId: '1:824353133931:web:815dc990e139d92101e82e',
+    messagingSenderId: '824353133931',
+    projectId: 'standard-albapay',
+    authDomain: 'standard-albapay.firebaseapp.com',
+    storageBucket: 'standard-albapay.firebasestorage.app',
+    measurementId: 'G-PBC36J25PR',
   );
 }

@@ -17,6 +17,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:shared_logic/shared_logic.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../models/store_info.dart';
 import '../../services/boss_logout.dart';
@@ -81,76 +82,194 @@ Future<void> _runSeedTestData(BuildContext context) async {
   }
 }
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final authService = AuthService();
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
 
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _gpsEnabled = false;
+  int _gpsRadius = 100;
+  bool _gpsLoading = true;
+  String? _storeId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGpsSettings();
+  }
+
+  Future<void> _loadGpsSettings() async {
+    try {
+      final storeId = await WorkerService.resolveStoreId();
+      if (storeId.isEmpty) {
+        if (mounted) setState(() => _gpsLoading = false);
+        return;
+      }
+      _storeId = storeId;
+      final snap = await FirebaseFirestore.instance.collection('stores').doc(storeId).get();
+      final data = snap.data() ?? {};
+      if (mounted) {
+        setState(() {
+          _gpsEnabled = data['gpsAttendanceEnabled'] ?? false;
+          _gpsRadius = (data['gpsRadius'] as num?)?.toInt() ?? 100;
+          _gpsLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _gpsLoading = false);
+    }
+  }
+
+  Future<void> _updateGpsSetting(String field, dynamic value) async {
+    if (_storeId == null) return;
+    await FirebaseFirestore.instance.collection('stores').doc(_storeId!).set(
+      {field: value},
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> _updateStoreLocationToCurrentPosition() async {
+    if (_storeId == null) return;
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        final req = await Geolocator.requestPermission();
+        if (req == LocationPermission.denied || req == LocationPermission.deniedForever) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('위치 권한이 필요합니다. 설정에서 허용해 주세요.')),
+            );
+          }
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('위치 권한이 영구 거부되었습니다. 기기 설정에서 허용해 주세요.')),
+          );
+        }
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      await FirebaseFirestore.instance.collection('stores').doc(_storeId!).set(
+        {'latitude': position.latitude, 'longitude': position.longitude},
+        SetOptions(merge: true),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('매장 위치가 업데이트되었습니다. (${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)})')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('위치 가져오기 실패: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('설정')),
+      appBar: AppBar(title: const Text('GPS 출퇴근 검증')),
       body: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
-          const ListTile(
-            leading: Icon(Icons.person_outline),
-            title: Text('내 프로필'),
-          ),
-          const ListTile(
-            leading: Icon(Icons.notifications_none),
-            title: Text('알림 설정'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.qr_code_2_rounded),
-            title: const Text('출퇴근용 QR 생성'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const StoreAttendanceQrScreen()),
-              );
-            },
-          ),
-          const Divider(),
-          if (kDebugMode) ...[
-            ListTile(
-              leading: const Icon(Icons.bug_report_outlined, color: Color(0xFF6D4C41)),
-              title: const Text('테스트 데이터 생성'),
-              subtitle: const Text('직원 5명·이번 주 근무표·지난주 출퇴근 20건을 Firestore에 넣습니다.'),
-              onTap: () => _runSeedTestData(context),
+          // ── GPS 출퇴근 검증 설정 ──
+          if (_gpsLoading)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else ...[
+            SwitchListTile(
+              secondary: const Icon(Icons.location_on_outlined),
+              title: const Text('GPS 출퇴근 검증'),
+              subtitle: const Text('알바생 출근 시 매장 반경 내 위치 확인'),
+              value: _gpsEnabled,
+              onChanged: (v) {
+                setState(() => _gpsEnabled = v);
+                _updateGpsSetting('gpsAttendanceEnabled', v);
+              },
             ),
-          ],
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('로그아웃', style: TextStyle(color: Colors.red)),
-            onTap: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('로그아웃'),
-                  content: const Text('정말 로그아웃 하시겠습니까?'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('확인', style: TextStyle(color: Colors.red)),
-                    ),
+            if (_gpsEnabled) ...[
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.radar, size: 20, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Text('허용 반경: ${_gpsRadius}m', style: const TextStyle(fontWeight: FontWeight.w600)),
                   ],
                 ),
-              );
-
-              if (confirm == true) {
-                await performBossLogout(authService);
-                if (context.mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
-                    (route) => false,
-                  );
-                }
-              }
-            },
-          ),
+              ),
+              Slider(
+                value: _gpsRadius.toDouble(),
+                min: 50,
+                max: 500,
+                divisions: 18,
+                label: '${_gpsRadius}m',
+                onChanged: (v) => setState(() => _gpsRadius = v.round()),
+                onChangeEnd: (v) => _updateGpsSetting('gpsRadius', v.round()),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Text('50m', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                    const Spacer(),
+                    Text('500m', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: OutlinedButton.icon(
+                  onPressed: _updateStoreLocationToCurrentPosition,
+                  icon: const Icon(Icons.my_location),
+                  label: const Text('현재 위치를 매장 좌표로 설정'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 44),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '매장에서 이 버튼을 눌러 좌표를 등록하세요.\n반경 밖 출근 시 사유 입력 후 허용됩니다.',
+                          style: TextStyle(fontSize: 12, color: Colors.black87, height: 1.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ],
         ],
       ),
     );
@@ -186,9 +305,8 @@ class _StoreAttendanceQrScreenState extends State<StoreAttendanceQrScreen> {
     final seed = '$storeId|attendance|$ts|pb-manager-v1';
     final signature = sha256.convert(utf8.encode(seed)).toString().substring(0, 16);
     final uri = Uri(
-      scheme: 'https',
-      host: 'standard-albapay.web.app',
-      path: '/',
+      scheme: 'com.standard.albapay',
+      host: 'attendance', // Custom App-only deep link
       queryParameters: {
         'storeId': storeId,
         'action': 'attendance',
@@ -256,9 +374,11 @@ class _StoreAttendanceQrScreenState extends State<StoreAttendanceQrScreen> {
     setState(() => _busy = true);
     try {
       final doc = pw.Document();
-      // 1 cm = 약 28.346 points 이므로 5cm x 5cm 설정
-      final qrSize = 5.0 * 28.346;
-      // 로컬 에셋에서 폰트 로드 (PdfGoogleFonts 에러 방지 및 오프라인 지원)
+      final cmSq = 28.346;
+      final cardWidth = 5.0 * cmSq;
+      final cardHeight = 6.0 * cmSq;
+
+      // 폰트는 NotoSansKR (로컬 에셋) 사용
       final fontData = await rootBundle.load("assets/fonts/NotoSansKR-Regular.ttf");
       final font = pw.Font.ttf(fontData);
       final boldFontData = await rootBundle.load("assets/fonts/NotoSansKR-Bold.ttf");
@@ -267,40 +387,56 @@ class _StoreAttendanceQrScreenState extends State<StoreAttendanceQrScreen> {
       doc.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.all(2 * cmSq),
           build: (pw.Context context) {
-            return pw.Center(
-              child: pw.Column(
-                mainAxisAlignment: pw.MainAxisAlignment.center,
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  pw.Text(
-                    storeName,
-                    style: pw.TextStyle(font: boldFont, fontSize: 32),
+            
+            pw.Widget buildCard() {
+              return pw.Container(
+                width: cardWidth,
+                height: cardHeight,
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(
+                    color: const PdfColor.fromInt(0xFF999999), 
+                    width: 0.5, 
+                    style: pw.BorderStyle.dashed
                   ),
-                  pw.SizedBox(height: 10),
-                  pw.Text(
-                    '출퇴근 기록용 QR 코드',
-                    style: pw.TextStyle(font: font, fontSize: 24),
-                  ),
-                  pw.SizedBox(height: 40),
-                  // 정확히 5cm x 5cm 강제 고정
-                  pw.Container(
-                    width: qrSize,
-                    height: qrSize,
-                    child: pw.BarcodeWidget(
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                padding: const pw.EdgeInsets.only(top: 14, left: 10, right: 10, bottom: 0),
+                child: pw.Column(
+                  mainAxisAlignment: pw.MainAxisAlignment.start,
+                  children: [
+                    pw.BarcodeWidget(
                       barcode: pw.Barcode.qrCode(),
                       data: qrUrl,
-                      width: qrSize,
-                      height: qrSize,
+                      width: 100,
+                      height: 100,
                     ),
-                  ),
-                  pw.SizedBox(height: 40),
-                  pw.Text(
-                    '알바급여정석 알바용 앱에서 카메라로 스캔하여 출퇴근을 기록하세요.',
-                    style: pw.TextStyle(font: font, fontSize: 14, color: const PdfColor.fromInt(0xFF555555)),
-                  ),
-                ],
-              ),
+                    pw.SizedBox(height: 12),
+                    pw.Text(
+                      storeName,
+                      style: pw.TextStyle(font: boldFont, fontSize: 13),
+                      maxLines: 1,
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      '카메라로 찍으면 즉시 출퇴근 기록이 됩니다',
+                      style: pw.TextStyle(font: font, fontSize: 8.5, color: const PdfColor.fromInt(0xFF666666)),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return pw.Center(
+               child: pw.Wrap(
+                 spacing: 2.5 * cmSq,   // 2.5cm 가로 간격
+                 runSpacing: 2.5 * cmSq, // 2.5cm 세로 간격
+                 alignment: pw.WrapAlignment.center,
+                 crossAxisAlignment: pw.WrapCrossAlignment.center,
+                 children: [buildCard(), buildCard(), buildCard(), buildCard()],
+               ),
             );
           },
         ),

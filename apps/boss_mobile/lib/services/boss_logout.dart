@@ -1,5 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_logic/shared_logic.dart';
 
+import 'push_service.dart';
 import 'store_cache_service.dart';
 import 'worker_service.dart';
 
@@ -7,6 +9,9 @@ import 'worker_service.dart';
 /// 다른 계정으로 다시 로그인할 때 이전 사업장/대시보드 데이터가 남지 않게 합니다.
 Future<void> performBossLogout(AuthService auth) async {
   await WorkerService.stopRealtimeSync();
+  // 로그아웃 전 FCM 토큰 제거 + Topic 해제 (#3, #4)
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  await PushService.instance.unbindPush(uid: uid);
   await auth.signOut();
   await StoreCacheService.clearAllLocalDataOnLogout();
 }

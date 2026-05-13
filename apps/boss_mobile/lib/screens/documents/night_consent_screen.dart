@@ -36,7 +36,7 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
   // 근로자 인적사항
   late final TextEditingController _nameCtrl;
   late final TextEditingController _ageCtrl;
-  late final TextEditingController _idNumCtrl;
+  late final TextEditingController _birthDateCtrl;
   late final TextEditingController _addressCtrl;
   late final TextEditingController _phoneCtrl;
 
@@ -91,7 +91,7 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
 
     _nameCtrl = TextEditingController(text: w.name);
     _ageCtrl = TextEditingController(text: age > 0 ? '$age' : '');
-    _idNumCtrl = TextEditingController();
+    _birthDateCtrl = TextEditingController(text: w.birthDate);
     _addressCtrl = TextEditingController();
     _phoneCtrl = TextEditingController(text: w.phone);
 
@@ -104,7 +104,7 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
         final data = jsonDecode(widget.document.dataJson!) as Map<String, dynamic>;
         _nameCtrl.text = data['name'] ?? _nameCtrl.text;
         _ageCtrl.text = data['age'] ?? _ageCtrl.text;
-        _idNumCtrl.text = data['idNum'] ?? '';
+        _birthDateCtrl.text = data['birthDate'] ?? w.birthDate;
         _addressCtrl.text = data['address'] ?? '';
         _phoneCtrl.text = data['phone'] ?? _phoneCtrl.text;
 
@@ -133,7 +133,7 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _ageCtrl.dispose();
-    _idNumCtrl.dispose();
+    _birthDateCtrl.dispose();
     _addressCtrl.dispose();
     _phoneCtrl.dispose();
     _otherJobTypeCtrl.dispose();
@@ -146,7 +146,7 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
       final data = {
         'name': _nameCtrl.text,
         'age': _ageCtrl.text,
-        'idNum': _idNumCtrl.text,
+        'birthDate': _birthDateCtrl.text,
         'address': _addressCtrl.text,
         'phone': _phoneCtrl.text,
         'isWoman': _isWoman,
@@ -172,6 +172,15 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
         data['signatureBase64'] = sigBase64;
       }
 
+      final newDataJson = jsonEncode(data);
+      final newHash = SecurityMetadataHelper.generateDocumentHash(
+        type: widget.document.type.name,
+        staffId: widget.document.staffId,
+        content: widget.document.content,
+        dataJson: newDataJson,
+        createdAt: widget.document.createdAt.toIso8601String(),
+      );
+
       await FirebaseFirestore.instance
           .collection('stores')
           .doc(widget.document.storeId)
@@ -180,7 +189,8 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
           .set({
         ...widget.document.toMap(),
         'status': 'boss_signed',
-        'dataJson': jsonEncode(data),
+        'dataJson': newDataJson,
+        'documentHash': newHash,
       }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('Failed to save document status: $e');
@@ -260,7 +270,7 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
             pw.Text('○ 근로자 인적사항', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
             pw.SizedBox(height: 10),
             _pdfInfoLine('성          명', '${_nameCtrl.text}   (만 ${_ageCtrl.text} 세)', font, bold),
-            _pdfInfoLine('주민등록번호', _idNumCtrl.text, font, bold),
+            _pdfInfoLine('생 년 월 일', _birthDateCtrl.text, font, bold),
             _pdfInfoLine('주          소', _addressCtrl.text, font, bold),
             _pdfInfoLine('연    락    처', _phoneCtrl.text, font, bold),
             pw.SizedBox(height: 20),
@@ -439,7 +449,7 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
                 const SizedBox(width: 10),
                 Expanded(flex: 2, child: _field('나이 (만)', _ageCtrl, hint: '세', keyboard: TextInputType.number)),
               ]),
-              _field('주민등록번호', _idNumCtrl, hint: '000000-0000000'),
+              _field('생년월일(YYYYMMDD)', _birthDateCtrl, hint: 'YYYYMMDD'),
               _field('주소', _addressCtrl),
               _field('연락처', _phoneCtrl, keyboard: TextInputType.phone),
             ]),

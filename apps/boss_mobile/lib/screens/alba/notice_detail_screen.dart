@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_logic/shared_logic.dart';
+import '../../widgets/full_screen_image_viewer.dart';
 
 /// 사장님이 작성한 공지 1건 상세 (알바 웹)
 class NoticeDetailScreen extends StatefulWidget {
@@ -65,7 +67,7 @@ class _NoticeDetailScreenState extends State<NoticeDetailScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('공지사항'),
+        title: const Text('공지사항 상세'),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         elevation: 0.5,
@@ -88,6 +90,7 @@ class _NoticeDetailScreenState extends State<NoticeDetailScreen> {
           final d = doc.data() ?? {};
           final title = d['title']?.toString() ?? '';
           final content = d['content']?.toString() ?? '';
+          final imageUrl = d['imageUrl']?.toString() ?? '';
           final createdAt = d['createdAt'];
 
           String dateText = '';
@@ -140,6 +143,28 @@ class _NoticeDetailScreenState extends State<NoticeDetailScreen> {
                             height: 1.3,
                           ),
                         ),
+                        if (imageUrl.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => FullScreenImageViewer(imageUrl: imageUrl, storeId: widget.storeId),
+                                  ),
+                                );
+                              },
+                              child: R2Image(
+                                storeId: widget.storeId,
+                                imagePathOrId: imageUrl,
+                                width: double.infinity,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         SelectableText(
                           content,

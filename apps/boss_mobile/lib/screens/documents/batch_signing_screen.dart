@@ -154,6 +154,8 @@ class _BatchSigningScreenState extends State<BatchSigningScreen> {
           bossSignatureMetadata: bossMeta,
           // 상태: [교부 대기] sent
           status: 'sent',
+          // ★ 문서 해시 유지
+          documentHash: doc.documentHash,
         );
         await db.saveDocument(updated);
       }

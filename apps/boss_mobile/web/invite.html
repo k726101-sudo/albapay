@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>알바급여정석 - 매장 초대</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f2f2f7;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 32px 24px;
+      max-width: 380px;
+      width: 100%;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+      text-align: center;
+    }
+    .icon { font-size: 56px; margin-bottom: 12px; }
+    h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 6px; }
+    .subtitle { font-size: 14px; color: #888; margin-bottom: 20px; }
+    .code-box {
+      background: #f0f7ff;
+      border: 1px solid #bbdefb;
+      border-radius: 8px;
+      padding: 10px 16px;
+      margin-bottom: 24px;
+      display: inline-block;
+    }
+    .code-box span { color: #1976d2; font-weight: 700; font-size: 15px; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 15px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      text-decoration: none;
+      margin-bottom: 10px;
+      text-align: center;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-primary { background: #10B981; color: #fff; font-size: 17px; }
+    .btn-android { background: #4285F4; color: #fff; }
+    .btn-ios { background: #000; color: #fff; }
+    .btn:hover { opacity: 0.9; }
+    .divider {
+      border: none;
+      border-top: 1px solid #eee;
+      margin: 20px 0 16px;
+    }
+    .help { font-size: 13px; color: #999; margin-bottom: 12px; }
+    .status { font-size: 13px; color: #10B981; margin-top: 16px; font-weight: 600; }
+    .manual {
+      margin-top: 16px;
+      padding: 12px;
+      background: #fafafa;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #999;
+      line-height: 1.6;
+    }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📱</div>
+    <h1>알바급여정석</h1>
+    <p class="subtitle">매장 초대 링크</p>
+
+    <div class="code-box" id="codeBox">
+      🔑 <span id="codeDisplay">초대코드 로딩중...</span>
+    </div>
+
+    <!-- 1단계: 앱 열기 (메인 CTA) -->
+    <button class="btn btn-primary" id="btnOpenApp" onclick="openApp()">
+      ✅ 앱에서 열기
+    </button>
+    <p class="status" id="status"></p>
+
+    <hr class="divider">
+
+    <!-- 2단계: 앱 미설치 시 -->
+    <p class="help">앱이 설치되지 않았나요?</p>
+    <a class="btn btn-android" id="btnAndroid" href="https://play.google.com/store/apps/details?id=com.standard.albapay">
+      🤖 Google Play 다운로드
+    </a>
+    <a class="btn btn-ios" id="btnIos" href="https://apps.apple.com/app/id6762085252">
+       App Store 다운로드
+    </a>
+
+    <div class="manual">
+      💡 앱 설치 후 이 페이지로 돌아와서<br>
+      <strong>「앱에서 열기」</strong> 버튼을 다시 눌러주세요!<br><br>
+      또는 앱에서 직접 초대코드를 입력하세요:<br>
+      <strong id="codeManual">-</strong>
+    </div>
+  </div>
+
+  <script>
+    // URL에서 초대코드 추출
+    var params = new URLSearchParams(window.location.search);
+    var code = params.get('code') || params.get('invite') || '';
+
+    // 초대코드 표시
+    document.getElementById('codeDisplay').textContent = code || '코드 없음';
+    document.getElementById('codeManual').textContent = code || '-';
+    if (!code) {
+      document.getElementById('codeBox').style.display = 'none';
+    }
+
+    // OS 감지
+    var ua = navigator.userAgent || '';
+    var isAndroid = /android/i.test(ua);
+    var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    // 불필요한 스토어 버튼 숨기기
+    if (isAndroid) {
+      document.getElementById('btnIos').style.display = 'none';
+    } else if (isIOS) {
+      document.getElementById('btnAndroid').style.display = 'none';
+    }
+
+    function openApp() {
+      var statusEl = document.getElementById('status');
+
+      if (isAndroid) {
+        // ★ Android: intent:// 스킴 (카카오톡 인앱 브라우저에서도 동작)
+        var intentUrl = 'intent://standard-albapay.web.app/invite?code=' + encodeURIComponent(code)
+          + '#Intent'
+          + ';scheme=https'
+          + ';package=com.standard.albapay'
+          + ';S.browser_fallback_url=' + encodeURIComponent('https://play.google.com/store/apps/details?id=com.standard.albapay')
+          + ';end;';
+
+        statusEl.textContent = '앱을 여는 중...';
+        location.href = intentUrl;
+
+        setTimeout(function() {
+          statusEl.textContent = '앱이 열리지 않으면 아래에서 설치해 주세요.';
+          statusEl.style.color = '#E24B4A';
+        }, 3000);
+
+      } else if (isIOS) {
+        var customSchemeUrl = 'com.standard.albapay://invite?code=' + encodeURIComponent(code);
+        
+        statusEl.textContent = '앱을 여는 중...';
+
+        // Safari 등 기본 브라우저 및 인앱 브라우저에서 커스텀 스킴 시도
+        // (기존 kakaotalk://web/openExternal 방식은 사파리와 앱이 2개 동시 켜지는 문제 발생)
+        location.href = customSchemeUrl;
+
+        setTimeout(function() {
+          statusEl.textContent = '앱이 열리지 않으면 아래에서 설치 후 다시 시도해 주세요.';
+          statusEl.style.color = '#E24B4A';
+        }, 3000);
+
+      } else {
+        // PC/기타: 안내
+        statusEl.textContent = '모바일 기기에서 이 링크를 열어주세요.';
+        statusEl.style.color = '#E24B4A';
+      }
+    }
+
+    // ★ 카카오톡 인앱 브라우저 감지 시 자동으로 처리
+    var isKakao = /KAKAOTALK/i.test(ua);
+    if (isKakao && code) {
+      // 무한 루프 방지: URL에 autoOpen 파라미터가 없으면 1회만 자동 실행
+      if (!params.has('autoOpen')) {
+        setTimeout(function() {
+           openApp();
+        }, 800);
+      }
+    }
+  </script>
+</body>
+</html>

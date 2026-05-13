@@ -21,9 +21,14 @@ class AppClock extends ChangeNotifier {
 
   /// [simulated] 가 null이면 실제 시간을 사용하도록 초기화합니다.
   /// [pushToFirestore] 가 true이면 파이어베이스 전역 채널('invites/global_debug_time_sync')에도 기록합니다.
-  static void setDebugOverride(DateTime? simulated, {bool pushToFirestore = true}) {
+  static void setDebugOverride(
+    DateTime? simulated, {
+    bool pushToFirestore = true,
+  }) {
     if (!kDebugMode) return;
-    debugPrint('[AppClock] setDebugOverride: $simulated (pushToFirestore: $pushToFirestore)');
+    debugPrint(
+      '[AppClock] setDebugOverride: $simulated (pushToFirestore: $pushToFirestore)',
+    );
     instance._debugOverride = simulated;
     instance.notifyListeners();
 
@@ -32,9 +37,11 @@ class AppClock extends ChangeNotifier {
           .collection('debug')
           .doc('global_time_sync')
           .set({
-        'timeOverride': simulated != null ? Timestamp.fromDate(simulated) : null,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+            'timeOverride': simulated != null
+                ? Timestamp.fromDate(simulated)
+                : null,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
     }
   }
 
@@ -43,27 +50,32 @@ class AppClock extends ChangeNotifier {
     if (!kDebugMode) return;
     if (instance._syncSub != null) return;
 
-    debugPrint('[AppClock] Starting global debug time sync (Real-time stream)...');
+    debugPrint(
+      '[AppClock] Starting global debug time sync (Real-time stream)...',
+    );
     instance._syncSub = FirebaseFirestore.instance
         .collection('debug')
         .doc('global_time_sync')
         .snapshots()
-        .listen((snap) {
-      if (!snap.exists) return;
-      final data = snap.data();
-      if (data == null) return;
+        .listen(
+          (snap) {
+            if (!snap.exists) return;
+            final data = snap.data();
+            if (data == null) return;
 
-      final remoteTime = data['timeOverride'] as Timestamp?;
-      final newTime = remoteTime?.toDate();
+            final remoteTime = data['timeOverride'] as Timestamp?;
+            final newTime = remoteTime?.toDate();
 
-      if (instance._debugOverride?.millisecondsSinceEpoch !=
-          newTime?.millisecondsSinceEpoch) {
-        debugPrint('[AppClock] Global time synced: $newTime');
-        setDebugOverride(newTime, pushToFirestore: false);
-      }
-    }, onError: (e) {
-      debugPrint('[AppClock] Global time sync failed: $e');
-    });
+            if (instance._debugOverride?.millisecondsSinceEpoch !=
+                newTime?.millisecondsSinceEpoch) {
+              debugPrint('[AppClock] Global time synced: $newTime');
+              setDebugOverride(newTime, pushToFirestore: false);
+            }
+          },
+          onError: (e) {
+            debugPrint('[AppClock] Global time sync failed: $e');
+          },
+        );
   }
 
   static bool get isDebugOverrideActive =>

@@ -61,4 +61,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'standard-albapay.firebasestorage.app',
     measurementId: 'G-PBC36J25PR',
   );
+
 }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_logic/shared_logic.dart';
 import 'package:intl/intl.dart';
@@ -43,10 +44,35 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
     
     try {
       // 1. Hive에서 해당 직원의 모든 근태 기록 가져오기
-      final attBox = Hive.box<Attendance>('attendances');
-      _allAttendances = attBox.values
-          .where((a) => a.staffId == widget.worker.id)
-          .toList();
+      try {
+        final attBox = Hive.box<Attendance>('attendances');
+        _allAttendances = attBox.values
+            .where((a) => a.staffId == widget.worker.id)
+            .toList();
+      } catch (_) {
+        debugPrint('Hive attendances box not available, using empty list');
+        _allAttendances = [];
+      }
+
+      // 가상 직원의 경우 Firestore에서도 출퇴근 기록 보충
+      if (widget.worker.name.contains('가상') && _allAttendances.isEmpty) {
+        try {
+          final storeId = await WorkerService.resolveStoreId().timeout(const Duration(seconds: 3));
+          if (storeId.isNotEmpty) {
+            final attSnap = await FirebaseFirestore.instance
+                .collection('attendance')
+                .where('staffId', isEqualTo: widget.worker.id)
+                .where('storeId', isEqualTo: storeId)
+                .get()
+                .timeout(const Duration(seconds: 5));
+            _allAttendances = attSnap.docs
+                .map((d) => Attendance.fromJson(d.data()))
+                .toList();
+          }
+        } catch (_) {
+          debugPrint('Fallback Firestore attendance fetch failed for virtual worker');
+        }
+      }
 
       // 2. 상점 설정 가져오기 (5인 이상 여부 등)
       bool isFiveOrMore = false;
@@ -72,6 +98,9 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
         hourlyRate: widget.worker.hourlyWage,
         isFiveOrMore: isFiveOrMore,
         manualAverageDailyWage: _isManualMode ? double.tryParse(_manualWageController.text) : widget.worker.manualAverageDailyWage,
+        annualLeaveInitialAdjustment: widget.worker.annualLeaveInitialAdjustment,
+        annualLeaveInitialAdjustmentReason: widget.worker.annualLeaveInitialAdjustmentReason,
+        promotionLogs: _parsePromotionLogs(widget.worker.leavePromotionLogsJson),
         isVirtual: widget.worker.name.contains('가상'),
       );
       
@@ -88,25 +117,52 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
       });
     } catch (e, st) {
       debugPrint('Error calculating exit settlement: $e\n$st');
+      
+      // 에러 시에도 최소한 재직일수와 퇴직금 자격은 정확히 계산
+      DateTime parsedJoinDate;
+      int workingDays;
+      try {
+        parsedJoinDate = DateTime.parse(widget.worker.startDate);
+        workingDays = widget.exitDate.difference(parsedJoinDate).inDays + 1;
+      } catch (_) {
+        parsedJoinDate = DateTime.now();
+        workingDays = 0;
+      }
+      
+      // 수동 입력 또는 시급 기반 평균 임금 산출
+      final manualWage = _isManualMode ? (double.tryParse(_manualWageController.text) ?? 0) : (widget.worker.manualAverageDailyWage);
+      final effectiveDailyWage = manualWage > 0 ? manualWage : (widget.worker.hourlyWage * 8);
+      final isSevEligible = workingDays >= 365;
+      final sevPay = isSevEligible ? (effectiveDailyWage * 30) * (workingDays / 365.0) : 0.0;
+      
+      // 연차수당 계산 (연차저금통에서 잔여 연차 가져오기)
+      final usedLeave = widget.worker.usedAnnualLeave;
+      final manualAdj = widget.worker.annualLeaveManualAdjustment;
+      // 1년 이상 근무: 기본 15개 + 수동 조정값 - 사용한 연차
+      final baseEntitlement = isSevEligible ? 15.0 : 0.0;
+      final remainLeave = (baseEntitlement + manualAdj - usedLeave).clamp(0.0, 999.0);
+      final leavePayout = remainLeave * 8 * widget.worker.hourlyWage;
+      
       setState(() {
         _result = ExitSettlementResult(
           workerName: widget.worker.name,
-          joinDate: DateTime.now(),
+          joinDate: parsedJoinDate,
           exitDate: widget.exitDate,
-          totalWorkingDays: 0,
-          isSeveranceEligible: false,
+          totalWorkingDays: workingDays,
+          isSeveranceEligible: isSevEligible,
           exitMonthWage: 0,
-          remainingLeaveDays: 0,
-          annualLeavePayout: 0,
-          severancePay: 0,
-          averageDailyWage: 0,
+          remainingLeaveDays: remainLeave,
+          annualLeavePayout: leavePayout,
+          severancePay: sevPay,
+          averageDailyWage: effectiveDailyWage,
           paymentDeadline: widget.exitDate.add(const Duration(days: 14)), 
-          requiresManualInput: false,
+          requiresManualInput: true,
         );
+        _isManualMode = true;
+        if (_manualWageController.text.isEmpty) {
+          _manualWageController.text = effectiveDailyWage.toInt().toString();
+        }
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('설정값을 불러오지 못했습니다. 가입일 포맷 등을 확인해주세요.')));
-      }
     } finally {
       if (mounted) {
         setState(() => _isDataLoading = false);
@@ -234,6 +290,7 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
       appBar: AppBar(
         title: const Text('퇴사 정산 리포트'),
         backgroundColor: const Color(0xFF1a1a2e),
+        foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -445,5 +502,15 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
         ],
       ),
     );
+  }
+
+  List<LeavePromotionStatus> _parsePromotionLogs(String json) {
+    if (json.isEmpty) return [];
+    try {
+      final List<dynamic> list = (jsonDecode(json) as List?) ?? [];
+      return list.map((e) => LeavePromotionStatus.fromMap((e as Map).cast<String, dynamic>())).toList();
+    } catch (_) {
+      return [];
+    }
   }
 }

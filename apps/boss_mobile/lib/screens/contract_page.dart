@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,11 +7,10 @@ import 'package:shared_logic/shared_logic.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../models/store_info.dart';
 import '../models/worker.dart';
-import '../services/invitation_service.dart';
+
 import '../utils/pdf/pdf_generator_service.dart';
 import 'documents/signature_pad_screen.dart';
 
@@ -23,12 +21,14 @@ class ContractPage extends StatefulWidget {
     required this.documentId,
     required this.storeId,
     this.initialDocument,
+    this.isWizardMode = false,
   });
 
   final Worker worker;
   final String documentId;
   final String storeId;
   final LaborDocument? initialDocument;
+  final bool isWizardMode;
 
   @override
   State<ContractPage> createState() => _ContractPageState();
@@ -39,6 +39,23 @@ class _ContractPageState extends State<ContractPage> {
   final _insuranceController = TextEditingController();
   final DatabaseService _dbService = DatabaseService();
   bool _isLoading = false;
+  int _wagePaymentDay = 10;
+
+  @override
+  void initState() {
+    super.initState();
+    final store = Hive.box<StoreInfo>('store').get('current');
+    if (widget.initialDocument?.dataJson != null) {
+      try {
+        final data = jsonDecode(widget.initialDocument!.dataJson!);
+        _wagePaymentDay = int.tryParse(data['wagePaymentDay']?.toString() ?? '') ?? (store?.payDay ?? 10);
+      } catch (_) {
+        _wagePaymentDay = store?.payDay ?? 10;
+      }
+    } else {
+      _wagePaymentDay = store?.payDay ?? 10;
+    }
+  }
 
   @override
   void dispose() {
@@ -67,10 +84,10 @@ class _ContractPageState extends State<ContractPage> {
         'status': status,
         if (signedAt != null) 'signedAt': signedAt.toIso8601String(),
         if (sentAt != null) 'sentAt': sentAt.toIso8601String(),
-        'bossSignatureUrl': ?bossSignatureUrl,
-        'bossSignatureMetadata': ?bossSignatureMetadata,
-        'signatureUrl': ?workerSignatureUrl,
-        'signatureMetadata': ?workerSignatureMetadata,
+        if (bossSignatureUrl != null) 'bossSignatureUrl': bossSignatureUrl,
+        if (bossSignatureMetadata != null) 'bossSignatureMetadata': bossSignatureMetadata,
+        if (workerSignatureUrl != null) 'signatureUrl': workerSignatureUrl,
+        if (workerSignatureMetadata != null) 'signatureMetadata': workerSignatureMetadata,
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -186,8 +203,17 @@ class _ContractPageState extends State<ContractPage> {
       'breakEnd': worker.breakEndTime,
       'workDaysInfo': _formatWorkDays(worker.workDays),
       'weeklyHoliday': _weeklyHolidayText(worker),
+      'wageType': worker.wageType,
       'hourlyWage': worker.hourlyWage.toStringAsFixed(0),
-      'wagePaymentDay': '${store?.payDay ?? 10}',
+      'monthlyWage': worker.monthlyWage.toStringAsFixed(0),
+      // 월급제 상세 데이터
+      'fixedOvertimeHours': worker.fixedOvertimeHours.floor(),
+      'fixedOvertimePay': worker.fixedOvertimeHours > 0 && worker.hourlyWage > 0
+          ? (worker.fixedOvertimeHours.floor() * worker.hourlyWage * 1.5).round()
+          : 0,
+      'sRefHours': (worker.weeklyHours * 4.345 +
+          (worker.weeklyHours >= 15 ? (worker.weeklyHours / 40.0 * 8.0 * 4.345) : 0)).round(),
+      'wagePaymentDay': '$_wagePaymentDay',
       'paymentMethod': '통장입금',
       'insurance': {
         'employment': worker.deductEmploymentInsurance,
@@ -212,13 +238,23 @@ class _ContractPageState extends State<ContractPage> {
       );
 
       // 2. dataJson 업데이트 (히스토리 보존을 위해)
+      final newDataJson = jsonEncode(contractData);
+      final newHash = SecurityMetadataHelper.generateDocumentHash(
+        type: doc.type.name,
+        staffId: doc.staffId,
+        content: doc.content,
+        dataJson: newDataJson,
+        createdAt: doc.createdAt.toIso8601String(),
+      );
+
       await FirebaseFirestore.instance
           .collection('stores')
           .doc(widget.storeId)
           .collection('documents')
           .doc(doc.id)
           .update({
-        'dataJson': jsonEncode(contractData),
+        'dataJson': newDataJson,
+        'documentHash': newHash,
       });
 
       // 3. 알바생에게 알림 전송
@@ -232,8 +268,13 @@ class _ContractPageState extends State<ContractPage> {
 
       if (!mounted) return;
       
-      // 3. 공유 시트 실행
-      await _shareDocumentLink(doc);
+      // 4. 교부 완료 안내
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ 서류가 교부되었습니다. 알바생 앱으로 알림이 전송됩니다.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
 
     } catch (e) {
       if (!mounted) return;
@@ -245,23 +286,6 @@ class _ContractPageState extends State<ContractPage> {
     }
   }
 
-  Future<void> _shareDocumentLink(LaborDocument doc) async {
-    final baseUrl = 'https://standard-albapay.web.app'; // 실제 운영 URL
-    final shareUrl = '$baseUrl/#/doc-view?id=${doc.id}&storeId=${widget.storeId}';
-    
-    final message = '[알바급여정석] 근로계약서가 교부되었습니다.\n\n아래 링크를 클릭하여 계약 내용을 확인해 주세요.\n$shareUrl';
-    
-    final box = context.findRenderObject() as RenderBox?;
-    final rect = box != null ? box.localToGlobal(Offset.zero) & box.size : null;
-
-    await SharePlus.instance.share(
-      ShareParams(
-        text: message,
-        title: '${doc.title} 교부',
-        sharePositionOrigin: rect,
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -316,10 +340,159 @@ class _ContractPageState extends State<ContractPage> {
                 _buildContractRow('출퇴근 시간', _readonlyValue(_contractCommuteTimeText(worker))),
                 _buildContractRow('휴게 시간', _breakTimeContractValue(worker)),
               ]),
-              _buildContractSection('임금', [
-                _buildContractRow('시급', _readonlyValue('${worker.hourlyWage.toStringAsFixed(0)}원')),
-                _buildContractRow('임금 지급일', _readonlyValue('매월 ${store?.payDay ?? 10}일')),
-              ]),
+              _buildContractSection('임금', (() {
+                if (worker.wageType == 'monthly') {
+                  // ── 월급제 임금 구성 상세 ──
+                  final mealAmt = worker.allowances
+                      .where((a) => a.label == '식대' || a.label == '식비')
+                      .fold<double>(0, (sum, a) => sum + a.amount);
+
+                  // S_Ref 계산 (직원별 소정근로시간 반영)
+                  final weeklyH = worker.weeklyHours > 0 ? worker.weeklyHours : 40.0;
+                  final workDaysPerWeek = worker.workDays.isNotEmpty
+                      ? worker.workDays.length.toDouble()
+                      : 5.0;
+                  final dailyH = weeklyH / workDaysPerWeek;
+                  final weeklyHolidayH = weeklyH >= 15 ? dailyH : 0.0;
+                  final sRef = ((weeklyH + weeklyHolidayH) * 4.345).ceilToDouble();
+
+                  // 통상시급 = (기본급 + 식대) / S_Ref
+                  final ordinaryHourly = sRef > 0
+                      ? (worker.monthlyWage + mealAmt) / sRef
+                      : 0.0;
+
+                  // 주휴수당 역산 (기본급에 포함된 주휴수당 금액)
+                  // 주휴시간 = 1일소정근로시간 × 4.345주
+                  final weeklyHolidayHoursPerMonth = weeklyHolidayH * 4.345;
+                  final weeklyHolidayPayAmount = ordinaryHourly * weeklyHolidayHoursPerMonth;
+
+                  // 고정연장수당
+                  final fixedOTPay = worker.fixedOvertimePay > 0
+                      ? worker.fixedOvertimePay
+                      : (worker.fixedOvertimeHours > 0 && ordinaryHourly > 0
+                          ? worker.fixedOvertimeHours * ordinaryHourly * 1.5
+                          : 0.0);
+
+                  final wageTotal = worker.monthlyWage + mealAmt + fixedOTPay;
+
+                  // 사업장 규모
+                  final isFiveOrMore = store?.isFiveOrMore ?? false;
+
+                  return <Widget>[
+                    _buildContractRow('급여 형태', _readonlyValue('월급제')),
+                    _buildContractRow('기본급', _readonlyValue(
+                        '${_formatContractMoney(worker.monthlyWage.round())}원')),
+                    // ★ 주휴수당 포함 안내
+                    if (weeklyH >= 15)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12, bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F7FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF1A73E8).withOpacity(0.2)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('📌 주휴수당 포함 내역',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1A73E8))),
+                              const SizedBox(height: 4),
+                              Text(
+                                '주휴시간: ${weeklyHolidayH.toStringAsFixed(1)}h/주 × 4.345주 = ${weeklyHolidayHoursPerMonth.toStringAsFixed(1)}h/월\n'
+                                '주휴수당(포함): ${_formatContractMoney(weeklyHolidayPayAmount.round())}원 (기본급에 포함)',
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade700, height: 1.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (mealAmt > 0)
+                      _buildContractRow('식대(비과세)', _readonlyValue(
+                          '${_formatContractMoney(mealAmt.round())}원')),
+                    if (worker.fixedOvertimeHours > 0) ...[
+                      _buildContractRow('고정연장수당', _readonlyValue(
+                          '${_formatContractMoney(fixedOTPay.round())}원 (월 ${worker.fixedOvertimeHours.toStringAsFixed(1)}시간분)')),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12, bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF8E1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFFF9800).withOpacity(0.3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('📋 고정연장수당 특약',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFE65100))),
+                              const SizedBox(height: 4),
+                              Text(
+                                isFiveOrMore
+                                    ? '• 5인 이상 사업장 (근로기준법 제56조 적용)\n'
+                                      '• 통상시급 ${_formatContractMoney(ordinaryHourly.round())}원 × 1.5배 = ${_formatContractMoney((ordinaryHourly * 1.5).round())}원/h\n'
+                                      '• 월 ${worker.fixedOvertimeHours.toStringAsFixed(1)}h 이하: 전액 지급 (차액 미공제)\n'
+                                      '• 초과 시: 초과분 × 1.5배 가산 별도 지급\n'
+                                      '• 휴일/휴무일 근무: 별도 지급 (고정연장시간에서 차감 불가)'
+                                    : '• 5인 미만 사업장 (가산수당 미적용)\n'
+                                      '• 통상시급 ${_formatContractMoney(ordinaryHourly.round())}원 기준\n'
+                                      '• 월 ${worker.fixedOvertimeHours.toStringAsFixed(1)}h 이하: 전액 지급 (차액 미공제)\n'
+                                      '• 초과 시: 초과분 × 통상시급 별도 지급\n'
+                                      '• 휴일/휴무일 근무: 별도 지급 (고정연장시간에서 차감 불가)',
+                                style: TextStyle(fontSize: 10.5, color: Colors.grey.shade700, height: 1.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    const Divider(height: 16),
+                    _buildContractRow('합계', Text(
+                      '${_formatContractMoney(wageTotal.round())}원',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black),
+                    )),
+                    _buildContractRow('통상시급', Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${_formatContractMoney(ordinaryHourly.round())}원',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text(
+                          '└ (기본급+식대) ÷ 월 ${sRef.toInt()}시간 = ${_formatContractMoney(ordinaryHourly.round())}원',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                        ),
+                      ],
+                    )),
+                    // ★ 평균 주수 합의 안내
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 4, bottom: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: const Text(
+                          '※ 본 급여는 1개월 평균 주수(4.345주) 기준으로 산정됩니다.\n'
+                          '결근·지각·조퇴 시 관련 법령에 따라 공제될 수 있습니다.',
+                          style: TextStyle(fontSize: 10.5, color: Colors.grey, height: 1.5),
+                        ),
+                      ),
+                    ),
+                    _buildContractRow('임금 지급일', _buildEditablePayDay(doc)),
+                  ];
+                } else {
+                  return <Widget>[
+                    _buildContractRow('급여 형태', _readonlyValue('시급제')),
+                    _buildContractRow('시급', _readonlyValue(
+                        '${_formatContractMoney(worker.hourlyWage.round())}원')),
+                    _buildContractRow('임금 지급일', _buildEditablePayDay(doc)),
+                  ];
+                }
+              })()),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -379,10 +552,34 @@ class _ContractPageState extends State<ContractPage> {
             label: const Text('서류 교부 완료 (전송)'),
           ),
         if (status == 'sent')
-          OutlinedButton.icon(
-            icon: const Icon(Icons.share_rounded),
-            onPressed: () => _shareDocumentLink(doc),
-            label: const Text('서류 다시 공유하기 (전송)'),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.check_circle, color: Color(0xFF34C759), size: 20),
+                    SizedBox(width: 8),
+                    Text('교부 완료 — 알바생 앱으로 알림 전송됨', 
+                      style: TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              if (widget.isWizardMode) ...[
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  icon: const Icon(Icons.person_add_alt_1),
+                  onPressed: () => Navigator.pop(context),
+                  label: const Text('다음: 알바생 초대하기'),
+                ),
+              ],
+            ],
           ),
       ],
     );
@@ -427,7 +624,45 @@ class _ContractPageState extends State<ContractPage> {
   }
 
   Widget _readonlyValue(String value) {
-    return Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500));
+    return Text(
+      value,
+      style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.normal),
+    );
+  }
+
+  Widget _buildEditablePayDay(LaborDocument doc) {
+    if (doc.status == 'draft' || doc.status == 'ready') {
+      return Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(4),
+          color: Colors.white,
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<int>(
+            value: _wagePaymentDay,
+            isDense: true,
+            style: const TextStyle(fontSize: 14, color: Colors.blue),
+            icon: const Icon(Icons.arrow_drop_down, color: Colors.blue, size: 20),
+            items: List.generate(28, (i) => i + 1)
+                .map((d) => DropdownMenuItem<int>(
+                      value: d,
+                      child: Text('매월 $d일'),
+                    ))
+                .toList(),
+            onChanged: (v) {
+              if (v != null) {
+                setState(() => _wagePaymentDay = v);
+              }
+            },
+          ),
+        ),
+      );
+    } else {
+      return _readonlyValue('매월 $_wagePaymentDay일');
+    }
   }
 
   String _formatWorkDays(List<int> days) {
@@ -445,6 +680,23 @@ class _ContractPageState extends State<ContractPage> {
   }
 
   String _contractCommuteTimeText(Worker worker) {
+    if (worker.workScheduleJson.isNotEmpty) {
+      try {
+        final List<dynamic> schedules = jsonDecode(worker.workScheduleJson);
+        if (schedules.isNotEmpty) {
+          final List<String> parts = [];
+          for (final group in schedules) {
+            final days = (group['days'] as List).cast<int>();
+            final wd = _formatWorkDays(days);
+            final s = group['start'];
+            final e = group['end'];
+            parts.add('$wd $s~$e');
+          }
+          return parts.join('\n');
+        }
+      } catch (_) {}
+    }
+
     final wd = _formatWorkDays(worker.workDays);
     final start = worker.checkInTime;
     final end = worker.checkOutTime;
@@ -455,5 +707,9 @@ class _ContractPageState extends State<ContractPage> {
     final minutes = worker.breakMinutes.toInt();
     if (minutes <= 0) return const Text('없음', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500));
     return Text('$minutes분', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500));
+  }
+
+  String _formatContractMoney(int amount) {
+    return amount.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
   }
 }

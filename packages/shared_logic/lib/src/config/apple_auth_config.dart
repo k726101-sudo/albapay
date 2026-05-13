@@ -40,8 +40,7 @@ class AppleAuthConfig {
   /// 배포 후 Firebase 콘솔 / `firebase functions:log` 로 정확한 URL을 확인해 동일하게 두세요.
   static const String androidOAuthReturnUrl = String.fromEnvironment(
     'APPLE_ANDROID_BRIDGE_URL',
-    defaultValue:
-        'https://applesigninandroidbridge-5uhwajbtdq-du.a.run.app',
+    defaultValue: 'https://applesigninandroidbridge-5uhwajbtdq-du.a.run.app',
   );
 
   @Deprecated('Use firebaseAuthHandlerUrl or androidOAuthReturnUrl')

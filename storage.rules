@@ -1,36 +1,71 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+
+    // 1. 매장 소유자(사장님) 검증 — 쓰기 권한용
+    function isStoreOwner(storeId) {
+      let storePath = /databases/(default)/documents/stores/$(storeId);
+      let isOwner = firestore.exists(storePath) && firestore.get(storePath).data.ownerId == request.auth.uid;
+      let isAdmin = request.auth.token.admin == true;
+      return isOwner || isAdmin;
+    }
+
+    // 2. 매장 멤버 검증 — 읽기 권한용
+    function isStoreMember(storeId) {
+      let userPath = /databases/(default)/documents/users/$(request.auth.uid);
+      let storePath = /databases/(default)/documents/stores/$(storeId);
+      
+      let isEmployee = firestore.exists(userPath) && firestore.get(userPath).data.storeId == storeId;
+      let isOwner = firestore.exists(storePath) && firestore.get(storePath).data.ownerId == request.auth.uid;
+      let isAdmin = request.auth.token.admin == true;
+      
+      return isEmployee || isOwner || isAdmin;
+    }
+
     // 서명 이미지 경로: signatures/{userId}/{filename}
     match /signatures/{userId}/{filename} {
       
-      // 1. 사용자 격리: 본인 폴더의 서명만 읽기 가능
-      // 2. 관리자 권한: admin 클레임(token.admin)이 있는 사장님은 모든 서명 조회 가능
+      // 사용자 격리: 본인 폴더의 서명만 읽기 가능 (관리자는 모두 조회 가능)
       allow read: if request.auth != null && (
         request.auth.uid == userId || 
         request.auth.token.admin == true
       );
 
-      // 3. 데이터 불변성: 신규 생성(upload)만 허용하고 수정(update) 및 삭제(delete)는 전면 차단
-      // 4. 파일 제한: 본인 UID 폴더에만 업로드 가능, 512KB 이하의 이미지 파일만 허용
+      // 본인 UID 폴더에만 업로드 가능, 512KB 이하의 이미지 파일만 허용
       allow create: if request.auth != null 
                     && request.auth.uid == userId
                     && request.resource.size < 512 * 1024
                     && request.resource.contentType.matches('image/.*');
       
+      // 서명은 수정/삭제 불가 (불변성 보장)
       allow update, delete: if false;
     }
+    
     // 서류 원본 PDF 경로: stores/{storeId}/documents/{filename}
     match /stores/{storeId}/documents/{filename} {
-      // 읽기 권한: 인증된 사용자만 허용
-      allow read: if request.auth != null;
+      // 읽기: 매장 멤버 전체
+      allow read: if request.auth != null && isStoreMember(storeId);
       
-      // 생성 권한: 인증된 사용자이고, 파일이 PDF일 때만 허용
+      // ★ 생성: 사장님만 (알바생이 서류 PDF 업로드 차단)
       allow create: if request.auth != null
+                    && isStoreOwner(storeId)
                     && request.resource.contentType == 'application/pdf';
                     
       // 서류 원본은 수정/삭제 금지 (불변성 보장)
       allow update, delete: if false;
+    }
+
+    // 공지사항 이미지 경로: stores/{storeId}/notices/{filename}
+    match /stores/{storeId}/notices/{filename} {
+      // 읽기: 매장 멤버 전체
+      allow read: if request.auth != null && isStoreMember(storeId);
+      
+      // ★ 쓰기: 사장님만 (알바생이 공지 이미지 업로드/수정/삭제 차단)
+      allow create, update: if request.auth != null 
+                            && isStoreOwner(storeId)
+                            && request.resource.contentType.matches('image/.*')
+                            && request.resource.size < 5 * 1024 * 1024;
+      allow delete: if request.auth != null && isStoreOwner(storeId);
     }
   }
 }

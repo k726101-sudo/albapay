@@ -19,6 +19,7 @@ import 'settings/settings_screen.dart';
 import '../services/worker_service.dart';
 import 'settings/backup_screen.dart';
 import 'settings/withdraw_screen.dart';
+import 'alba/legal_screen.dart';
 
 /// Brand colors aligned with the rest of the boss app.
 const Color kMainTabNavy = Color(0xFF0032A0);
@@ -310,6 +311,18 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                       ),
                     ),
                     _buildSettingsRow(
+                      icon: Icons.location_on_outlined,
+                      iconBg: const Color(0xFF059669),
+                      title: 'GPS 출퇴근 검증',
+                      subtitle: '매장 반경 내 위치 확인 설정',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SettingsScreen(),
+                        ),
+                      ),
+                    ),
+                    _buildSettingsRow(
                       icon: Icons.payments_outlined,
                       iconBg: const Color(0xFFd4700a),
                       title: '급여·보험 설정',
@@ -357,9 +370,9 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                       iconBg: const Color(0xFF6B7280),
                       title: '면책 고지',
                       subtitle: '급여 계산 참고용 안내',
-                      onTap: () => _openLegalUrl(
-                        context,
-                        'https://standard-albapay.web.app/terms',
+                      onTap: () => Navigator.push(
+                         context,
+                         MaterialPageRoute(builder: (_) => const LegalScreen(type: 'terms')),
                       ),
                     ),
                     _buildSettingsRow(
@@ -367,10 +380,25 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                       iconBg: const Color(0xFF6B7280),
                       title: '개인정보처리방침',
                       subtitle: '',
-                      onTap: () => _openLegalUrl(
-                        context,
-                        'https://standard-albapay.web.app/privacy',
+                      onTap: () => Navigator.push(
+                         context,
+                         MaterialPageRoute(builder: (_) => const LegalScreen(type: 'privacy')),
                       ),
+                    ),
+                    _buildSettingsRow(
+                      icon: Icons.school_outlined,
+                      iconBg: const Color(0xFF1565C0),
+                      title: '처음부터 다시 안내받기',
+                      subtitle: '단계별 사용 가이드를 다시 봅니다',
+                      onTap: () async {
+                        await OnboardingGuideService.instance.restart();
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('대시보드로 돌아가면 안내가 다시 시작됩니다 👋'),
+                          ),
+                        );
+                      },
                     ),
                     _buildSettingsRow(
                       icon: Icons.info_outline,

@@ -1,9 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:google_sign_in/google_sign_in.dart' as google_sign_in;
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../config/apple_auth_config.dart';
 import '../config/google_auth_config.dart';
+import 'onboarding_guide_service.dart';
 
 class AuthService {
   final firebase_auth.FirebaseAuth _auth = firebase_auth.FirebaseAuth.instance;
@@ -46,7 +48,8 @@ class AuthService {
         // (We avoid calling fetchSignInMethodsForEmail due to API differences across firebase_auth versions.)
         final existing = await signInWithGoogle();
         final user = existing?.user;
-        if (user != null && (user.email ?? '').toLowerCase() == email.toLowerCase()) {
+        if (user != null &&
+            (user.email ?? '').toLowerCase() == email.toLowerCase()) {
           try {
             return await user.linkWithCredential(credential);
           } catch (_) {
@@ -62,7 +65,10 @@ class AuthService {
     }
   }
 
-  Future<firebase_auth.UserCredential?> signInWithEmail(String email, String password) async {
+  Future<firebase_auth.UserCredential?> signInWithEmail(
+    String email,
+    String password,
+  ) async {
     try {
       return await _auth.signInWithEmailAndPassword(
         email: email,
@@ -74,24 +80,39 @@ class AuthService {
     }
   }
 
-  Future<firebase_auth.UserCredential?> signUp(String email, String password) async {
+  Future<firebase_auth.UserCredential?> signUp(
+    String email,
+    String password,
+  ) async {
     try {
-      return await _auth.createUserWithEmailAndPassword(email: email, password: password);
+      return await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
     } catch (e) {
       print('Sign up error: $e');
       return null;
     }
   }
 
-  Future<void> sendSignInLinkToEmail(String email, firebase_auth.ActionCodeSettings settings) async {
-    await _auth.sendSignInLinkToEmail(email: email, actionCodeSettings: settings);
+  Future<void> sendSignInLinkToEmail(
+    String email,
+    firebase_auth.ActionCodeSettings settings,
+  ) async {
+    await _auth.sendSignInLinkToEmail(
+      email: email,
+      actionCodeSettings: settings,
+    );
   }
 
   bool isSignInWithEmailLink(String emailLink) {
     return _auth.isSignInWithEmailLink(emailLink);
   }
 
-  Future<firebase_auth.UserCredential?> signInWithEmailLink(String email, String emailLink) async {
+  Future<firebase_auth.UserCredential?> signInWithEmailLink(
+    String email,
+    String emailLink,
+  ) async {
     try {
       // If already signed in, link the email-link provider to current user.
       final currentUser = _auth.currentUser;
@@ -100,9 +121,15 @@ class AuthService {
           email: email,
           emailLink: emailLink,
         );
-        return await _linkOrSignInWithCredential(credential, emailForConflictResolution: email);
+        return await _linkOrSignInWithCredential(
+          credential,
+          emailForConflictResolution: email,
+        );
       }
-      return await _auth.signInWithEmailLink(email: email, emailLink: emailLink);
+      return await _auth.signInWithEmailLink(
+        email: email,
+        emailLink: emailLink,
+      );
     } catch (e) {
       print('Email link sign in error: $e');
       return null;
@@ -115,13 +142,31 @@ class AuthService {
   Future<void> signOut() async {
     await _auth.signOut();
     await _signOutGoogleSdk();
+    try {
+      await OnboardingGuideService.instance.reset();
+    } catch (_) {}
   }
 
   Future<void> _ensureGoogleSignInInitialized() async {
     if (_isGoogleSignInInitialized) return;
-    await google_sign_in.GoogleSignIn.instance.initialize(
-      serverClientId: GoogleAuthConfig.serverClientId,
-    );
+    try {
+      if (kIsWeb) {
+        // Web requires clientId
+        await google_sign_in.GoogleSignIn.instance.initialize(
+          clientId: GoogleAuthConfig.serverClientId,
+        );
+      } else {
+        await google_sign_in.GoogleSignIn.instance.initialize(
+          serverClientId: GoogleAuthConfig.serverClientId,
+        );
+      }
+    } catch (e) {
+      if (e.toString().contains('already been called')) {
+        // Ignore initialization collision
+      } else {
+        rethrow;
+      }
+    }
     _isGoogleSignInInitialized = true;
   }
 
@@ -150,7 +195,9 @@ class AuthService {
     );
   }
 
-  Future<firebase_auth.UserCredential?> signInWithPhoneCredential(firebase_auth.PhoneAuthCredential credential) async {
+  Future<firebase_auth.UserCredential?> signInWithPhoneCredential(
+    firebase_auth.PhoneAuthCredential credential,
+  ) async {
     try {
       return await _auth.signInWithCredential(credential);
     } catch (e) {
@@ -160,6 +207,18 @@ class AuthService {
   }
 
   Future<firebase_auth.UserCredential?> signInWithGoogle() async {
+    if (kIsWeb) {
+      try {
+        final googleProvider = firebase_auth.GoogleAuthProvider();
+        googleProvider.addScope('email');
+        googleProvider.addScope('profile');
+        return await _auth.signInWithPopup(googleProvider);
+      } catch (e) {
+        print('Google Web sign in error: $e');
+        return null;
+      }
+    }
+
     final googleSignIn = google_sign_in.GoogleSignIn.instance;
 
     await _ensureGoogleSignInInitialized();
@@ -168,16 +227,15 @@ class AuthService {
     final googleUser = await googleSignIn.authenticate();
 
     final googleAuth = googleUser.authentication;
-    final authz =
-        await googleUser.authorizationClient.authorizationForScopes(
+    final authz = await googleUser.authorizationClient.authorizationForScopes(
       const ['email', 'profile'],
     );
 
     final firebase_auth.AuthCredential credential =
         firebase_auth.GoogleAuthProvider.credential(
-      accessToken: authz?.accessToken,
-      idToken: googleAuth.idToken,
-    );
+          accessToken: authz?.accessToken,
+          idToken: googleAuth.idToken,
+        );
 
     return await _linkOrSignInWithCredential(
       credential,
@@ -196,6 +254,18 @@ class AuthService {
     String? webClientId,
     String? webRedirectUri,
   }) async {
+    if (kIsWeb) {
+      try {
+        final appleProvider = firebase_auth.OAuthProvider('apple.com');
+        appleProvider.addScope('email');
+        appleProvider.addScope('name');
+        return await _auth.signInWithPopup(appleProvider);
+      } catch (e) {
+        print('Apple Web sign in error: $e');
+        return null;
+      }
+    }
+
     if (AppleAuthConfig.useNativeAppleSignIn) {
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: const [

@@ -1,65 +1,207 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart' as google_sign_in;
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:shared_logic/shared_logic.dart' show AppleAuthConfig, GoogleAuthConfig, OnboardingGuideService;
 
 class WithdrawService {
-  /// 계정과 연결된 모든 노무 데이터를 0바이트로 파기하고 파기 증명원(Audit Log)을 남깁니다.
+  /// 계정과 연결된 모든 노무 데이터를 파기하고 파기 증명원(Audit Log)을 남깁니다.
   static Future<void> deleteAccountAndData(String storeId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('로그인되어 있지 않습니다.');
     
     final uid = user.uid;
     final db = FirebaseFirestore.instance;
+    final errors = <String>[];
 
-    // 1. Audit Log (파기 증명원) 보존
-    // 데이터 본체는 모두 날아가지만, '누가 언제 어떤 약관에 동의하고 파기했는지'는 3년간 서버에 남아 분쟁을 방어함.
-    final auditRef = db.collection('audit_logs').doc();
-    await auditRef.set({
-      'userId': uid,
-      'storeId': storeId,
-      'action': 'ACCOUNT_WITHDRAWAL',
-      'reason': '사용자 자진 탈퇴 및 즉시 파기',
-      'destroyedAt': FieldValue.serverTimestamp(),
-      'termsAgreed': [
-         '1. 백업 미진행 데이터 전량 파기 확인',
-         '2. 노동 분쟁 시 증빙 자료 손실 법적 책임 동의',
-         '3. 데이터의 어떠한 복구도 불가함에 동의',
-      ],
-      'deletedBy': 'USER_DIRECT',
-    });
-
-    // 2. 매장 및 하위 노무 데이터(근태, 급여, 백업 파일 등) 전량 삭제
-    if (storeId.isNotEmpty) {
-      final storeRef = db.collection('stores').doc(storeId);
-      final subcollections = ['attendance', 'archives', 'frozen_items', 'destruction_logs', 'workers', 'payrolls', 'documents']; 
-      
-      for (final sub in subcollections) {
-        final docs = await storeRef.collection(sub).get();
-        for (final doc in docs.docs) {
-          // 보안 파기 목적: 삭제 전 빈 데이터로 덮어씌움 (Overwriting)
-          await doc.reference.set({}, SetOptions(merge: false));
-          await doc.reference.delete();
-        }
-      }
-      
-      // 스토어 본체 덮어쓰기 및 삭제
-      await storeRef.set({}, SetOptions(merge: false));
-      await storeRef.delete();
+    // 1. Audit Log (파기 증명원) 보존 — 반드시 먼저
+    try {
+      final auditRef = db.collection('audit_logs').doc();
+      await auditRef.set({
+        'userId': uid,
+        'storeId': storeId,
+        'action': 'ACCOUNT_WITHDRAWAL',
+        'reason': '사용자 자진 탈퇴 및 즉시 파기',
+        'destroyedAt': FieldValue.serverTimestamp(),
+        'termsAgreed': [
+           '1. 백업 미진행 데이터 전량 파기 확인',
+           '2. 노동 분쟁 시 증빙 자료 손실 법적 책임 동의',
+           '3. 데이터의 어떠한 복구도 불가함에 동의',
+        ],
+        'deletedBy': 'USER_DIRECT',
+      });
+    } catch (e) {
+      errors.add('audit_log: $e');
+      // Audit 실패해도 탈퇴는 계속 진행
     }
 
-    // 3. Boss(User) 정보 삭제
-    final userRef = db.collection('users').doc(uid);
-    await userRef.set({}, SetOptions(merge: false));
-    await userRef.delete();
+    // 2. 매장 하위 노무 데이터 전량 삭제
+    //    주의: users/{uid} 와 stores/{storeId} 본체는 맨 마지막에 삭제해야 함.
+    //    isStoreMember() 규칙이 이 문서들을 참조하기 때문.
+    if (storeId.isNotEmpty) {
+      final storeRef = db.collection('stores').doc(storeId);
+      final subcollections = [
+        'attendance', 'archives', 'frozen_items', 'destruction_logs',
+        'workers', 'payrolls', 'documents', 'notices', 'todos', 'expirations',
+      ]; 
+      
+      for (final sub in subcollections) {
+        try {
+          final docs = await storeRef.collection(sub).get();
+          for (final doc in docs.docs) {
+            try {
+              await doc.reference.delete();
+            } catch (_) {}
+          }
+        } catch (e) {
+          errors.add('sub/$sub: $e');
+        }
+      }
+
+      // Top-level attendance 삭제
+      try {
+        final attendanceDocs = await db.collection('attendance')
+            .where('storeId', isEqualTo: storeId)
+            .get();
+        for (final doc in attendanceDocs.docs) {
+          try { await doc.reference.delete(); } catch (_) {}
+        }
+      } catch (e) {
+        errors.add('top-attendance: $e');
+      }
+
+      // Top-level invites 삭제
+      try {
+        final inviteDocs = await db.collection('invites')
+            .where('storeId', isEqualTo: storeId)
+            .get();
+        for (final doc in inviteDocs.docs) {
+          try { await doc.reference.delete(); } catch (_) {}
+        }
+      } catch (e) {
+        errors.add('invites: $e');
+      }
+      
+      // 스토어 본체 삭제 (마지막)
+      try {
+        await storeRef.delete();
+      } catch (e) {
+        errors.add('store: $e');
+      }
+    }
+
+    // 3. Boss(User) 정보 삭제 (스토어 삭제 후)
+    try {
+      final userRef = db.collection('users').doc(uid);
+      await userRef.delete();
+    } catch (e) {
+      errors.add('user: $e');
+    }
 
     // 4. Firebase Auth 자격 증명 파기
-    // 주의: recent-login 이 필요한 경우 에러가 발생하며, 이 경우 재로그인 안내를 해야 함.
+    //    requires-recent-login 발생 시 자동 재인증 후 재시도
     try {
       await user.delete();
     } on FirebaseAuthException catch (e) {
       if (e.code == 'requires-recent-login') {
-        throw Exception('보안을 위해 다시 로그인한 직후 탈퇴를 시도해 주세요.');
+        // 사용자의 로그인 제공자 확인 후 재인증
+        final reauthed = await _reauthenticateUser(user);
+        if (reauthed) {
+          await user.delete();
+        } else {
+          throw Exception('보안을 위해 다시 로그인한 직후 탈퇴를 시도해 주세요.');
+        }
+      } else {
+        rethrow;
       }
-      rethrow;
+    }
+
+    // 탈퇴 성공 시 로컬 Google 세션도 파기
+    try {
+      await google_sign_in.GoogleSignIn.instance.signOut();
+    } catch (_) {}
+
+    // 5. 온보딩 가이드 상태 초기화
+    try {
+      await OnboardingGuideService.instance.reset();
+    } catch (_) {}
+  }
+
+  /// 사용자 재인증 (Google / Apple)
+  static Future<bool> _reauthenticateUser(User user) async {
+    final providers = user.providerData.map((p) => p.providerId).toList();
+
+    try {
+      if (providers.contains('google.com')) {
+        return await _reauthWithGoogle(user);
+      } else if (providers.contains('apple.com')) {
+        return await _reauthWithApple(user);
+      }
+    } catch (e) {
+      // 재인증 실패
+    }
+    return false;
+  }
+
+  static Future<bool> _reauthWithGoogle(User user) async {
+    try {
+      final googleSignIn = google_sign_in.GoogleSignIn.instance;
+
+      // GoogleSignIn 초기화
+      try {
+        await googleSignIn.initialize(
+          serverClientId: GoogleAuthConfig.serverClientId,
+        );
+      } catch (_) {
+        // 이미 초기화된 경우 무시
+      }
+
+      final googleUser = await googleSignIn.authenticate();
+      final googleAuth = googleUser.authentication;
+      final authz = await googleUser.authorizationClient.authorizationForScopes(
+        const ['email', 'profile'],
+      );
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: authz?.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> _reauthWithApple(User user) async {
+    try {
+      final cid = AppleAuthConfig.clientId.trim();
+      final bridgeUri = Uri.parse(AppleAuthConfig.androidOAuthReturnUrl);
+
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        webAuthenticationOptions: AppleAuthConfig.useNativeAppleSignIn
+            ? null
+            : WebAuthenticationOptions(
+                clientId: cid,
+                redirectUri: bridgeUri,
+              ),
+      );
+
+      final oAuth = OAuthProvider('apple.com');
+      final credential = oAuth.credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 

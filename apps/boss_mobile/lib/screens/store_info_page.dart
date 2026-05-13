@@ -365,6 +365,8 @@ class _StoreInfoPageState extends State<StoreInfoPage> {
         backgroundColor: Color(0xFF286b3a),
       ),
     );
+    // 온보딩: 사업장 등록 완료
+    OnboardingGuideService.instance.completeStep(OnboardingStep.storeSetup);
     if (!widget.isOnboarding) {
       Navigator.pop(context);
     }
@@ -398,6 +400,7 @@ class _StoreInfoPageState extends State<StoreInfoPage> {
       backgroundColor: const Color(0xFFF2F2F7),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1a1a2e),
+        foregroundColor: Colors.white,
         leading: widget.isOnboarding
             ? null
             : IconButton(

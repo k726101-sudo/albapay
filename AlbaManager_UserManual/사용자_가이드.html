@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>알바급여정석 통합 사용자 가이드 (사장님/알바생)</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2F6BFF;
+            --primary-light: #EFF4FF;
+            --secondary-color: #6B7280;
+            --text-main: #111827;
+            --text-muted: #4B5563;
+            --bg-body: #F9FAFB;
+            --bg-card: #FFFFFF;
+            --border-color: #E5E7EB;
+            --accent-color: #FF5A5F;
+            --sidebar-width: 280px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+            overflow-x: hidden;
+        }
+
+        /* ----- Sidebar Navigation ----- */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--bg-card);
+            border-right: 1px solid var(--border-color);
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            overflow-y: auto;
+            padding: 2rem 1.5rem;
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .nav-group { margin-bottom: 2rem; }
+        .nav-group-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--secondary-color);
+            margin-bottom: 1rem;
+        }
+        .nav-link {
+            display: block;
+            padding: 0.6rem 1rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            margin-bottom: 0.3rem;
+        }
+        .nav-link:hover, .nav-link.active {
+            background-color: var(--primary-light);
+            color: var(--primary-color);
+        }
+
+        /* ----- Main Content ----- */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            flex: 1;
+            padding: 3rem 4rem;
+            max-width: 1000px;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, var(--primary-color) 0%, #1A4DCC 100%);
+            color: white;
+            padding: 4rem 3rem;
+            border-radius: 20px;
+            margin-bottom: 4rem;
+        }
+        .hero h1 { font-size: 2.5rem; font-weight: 700; margin-bottom: 1rem; }
+        .hero p { font-size: 1.15rem; color: #FFFFFF; opacity: 0.95; line-height: 1.5; }
+
+        section {
+            padding-top: 4rem;
+            margin-top: -2rem;
+            margin-bottom: 4rem;
+            animation: fadeIn 0.6s ease-out forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        section.visible { opacity: 1; transform: translateY(0); }
+
+        .part-header {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 2.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--primary-light);
+        }
+
+        h2 { font-size: 1.75rem; color: var(--text-main); margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        h2::before { content: ''; display: inline-block; width: 8px; height: 24px; background-color: var(--primary-color); border-radius: 4px; }
+        h3 { font-size: 1.25rem; margin: 2rem 0 1rem 0; }
+        p { font-size: 1.05rem; color: var(--text-muted); margin-bottom: 1.5rem; }
+        ul { list-style-type: none; margin-bottom: 1.5rem; }
+        li { position: relative; padding-left: 1.5rem; margin-bottom: 0.75rem; color: var(--text-muted); font-size: 1.05rem;}
+        li::before { content: '•'; color: var(--primary-color); font-weight: bold; font-size: 1.5rem; position: absolute; left: 0; top: -5px; }
+
+        /* ----- Images ----- */
+        .img-gallery { display: flex; flex-wrap: wrap; gap: 20px; margin: 2.5rem 0; justify-content: center; }
+        .img-card { background: var(--bg-card); padding: 15px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); max-width: 30%; flex: 1 1 200px; }
+        .img-card img { width: 100%; border-radius: 8px; border: 1px solid var(--border-color); display: block; }
+        .img-caption { text-align: center; font-size: 0.85rem; color: var(--secondary-color); margin-top: 10px; font-weight: 500; }
+        
+        .img-gallery.four-items .img-card { max-width: 22%; }
+        .img-gallery.single-item .img-card { max-width: 50%; }
+
+        /* ----- Callouts ----- */
+        .callout { padding: 1.5rem; border-radius: 12px; margin: 2rem 0; display: flex; gap: 1rem; background-color: var(--bg-card); border-left: 5px solid transparent; }
+        .callout i { font-size: 1.5rem; }
+        .callout-title { font-weight: 700; margin-bottom: 0.5rem; font-size: 1.1rem; }
+        
+        .callout.tip { border-left-color: #10B981; background-color: #ECFDF5; }
+        .callout.tip i, .callout.tip .callout-title { color: #047857; }
+        .callout.important { border-left-color: #F59E0B; background-color: #FFFBEB; }
+        .callout.important i, .callout.important .callout-title { color: #B45309; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* --- PDF Print Fix --- */
+        @media print {
+            body, .main-content { background: white !important; margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+            .sidebar, .mobile-nav-toggle { display: none !important; }
+            section {
+                opacity: 1 !important; transform: none !important; animation: none !important;
+                margin-top: 0 !important; padding-top: 2rem !important; page-break-inside: auto; margin-bottom: 2rem !important;
+            }
+            .hero { padding: 2rem !important; margin-bottom: 2rem !important; page-break-after: avoid; }
+            .hero h1, .part-header { page-break-after: avoid; }
+            .img-card { page-break-inside: avoid; box-shadow: none !important; border: 1px solid #ddd; }
+            .img-gallery { gap: 10px; }
+            h2, h3 { page-break-after: avoid; }
+            p, ul, li { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-brand"><i class="fas fa-file-invoice-dollar"></i> 알바급여정석</div>
+        <div class="nav-group">
+            <div class="nav-group-title">제1부. 앱 역할 분기 및 세팅</div>
+            <a href="#section-1" class="nav-link">1. 새로운 역할 선택 및 로그인</a>
+            <a href="#section-2" class="nav-link">2. 사장님: GPS 출근 검증 설정</a>
+            <a href="#section-3" class="nav-link">3. 직원/알바: 초대코드 로그인</a>
+        </div>
+        <div class="nav-group">
+            <div class="nav-group-title">제2부. 사장님 핵심 기능</div>
+            <a href="#section-4" class="nav-link">4. 사업장 정보 및 직원 등록</a>
+            <a href="#section-5" class="nav-link">5. 필수 노무 서류 자동화 교부</a>
+            <a href="#section-6" class="nav-link">6. 대시보드 및 급여 리포트</a>
+        </div>
+        <div class="nav-group">
+            <div class="nav-group-title">제3부. 직원용 (앱/웹 가이드)</div>
+            <a href="#section-7" class="nav-link">7. GPS 출퇴근 및 대시보드</a>
+            <a href="#section-8" class="nav-link">8. 스케줄, 급여, 노무서류 확인</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="hero">
+            <h1>알바급여정석 사용자 가이드</h1>
+            <p>사장님과 알바생이 앱 하나로 완벽하게 소통하는 스마트 급여정산/노무관리 솔루션. 핵심 기능인 앱 분기 시스템과 GPS 출퇴근 기능을 포함한 매뉴얼입니다.</p>
+        </div>
+
+        <h1 class="part-header" id="part-1"><i class="fas fa-rocket"></i> 제1부. 앱 역할 분기 및 필수 세팅</h1>
+
+        <section id="section-1">
+            <h2>1. 새로운 통합 앱: 역할 선택 및 로그인</h2>
+            <p>기존에 분리되어 있던 웹/앱 환경이 하나로 통합되었습니다. 처음 앱을 실행하시면 <strong>사장님</strong>으로 시작할지, <strong>알바생(매니저)</strong>으로 시작할지 선택하게 됩니다.</p>
+            
+            <div class="img-gallery single-item">
+                <div class="img-card">
+                    <img src="images/role_selection.jpg" alt="회원 역할 선택 화면">
+                    <div class="img-caption">초기 역할 선택 화면</div>
+                </div>
+            </div>
+
+            <ul>
+                <li><strong>매장 관리자 (사장/점장)</strong>: 매장을 새롭게 등록하거나, 기존 계정으로 로그인하여 직원을 관리하는 메뉴입니다. 소셜 로그인(구글/애플)으로 3초 만에 시작할 수 있습니다.</li>
+                <li><strong>매장 직원 (알바생/매니저)</strong>: 사장님으로부터 받은 <strong>[초대 코드]</strong>를 입력하여 해당 매장에 즉시 합류하는 메뉴입니다!</li>
+            </ul>
+        </section>
+
+
+        <section id="section-2">
+            <h2>2. 사장님: GPS 출근 검증 설정 (신규)</h2>
+            <p>이제 직원들이 매장 밖에서 부정 출근(허위 출근 처리)을 하는 것을 방지하기 위해 <strong>GPS 매장 위치 인증</strong> 기능을 도입했습니다. 사장님 앱의 설정 메뉴에서 활성화하실 수 있습니다.</p>
+            
+            <div class="img-gallery single-item">
+                <div class="img-card">
+                    <img src="images/gps_checkin.jpg" alt="GPS 출근 검증">
+                    <div class="img-caption">GPS 출근 검증 설정 화면</div>
+                </div>
+            </div>
+
+            <h3>🔹 GPS 좌표 등록 및 반경 설정</h3>
+            <ul>
+                <li><strong>현재 위치를 매장 좌표로 설정</strong>: 사장님께서 <u>실제 매장에 계실 때</u> 이 버튼을 눌러 정확한 GPS 좌표를 등록해 주세요.</li>
+                <li><strong>허용 반경 조정 (50m ~ 500m)</strong>: 직원들이 출근 버튼을 누를 수 있는 GPS 반경을 설정할 수 있습니다. 너무 좁게 설정하면 GPS 오차시 문제가 될 수 있으니 보통 100m를 권장합니다.</li>
+                <li><strong>강력한 부정 방지</strong>: 직원이 설정된 반경 밖에서 출근을 시도할 경우, 차단되거나 <strong>'사유 입력'</strong> 후 예외 처리가 사장님 대시보드로 실시간 알림 전송됩니다.</li>
+            </ul>
+        </section>
+
+        <section id="section-3">
+            <h2>3. 매장 직원: 초대코드를 통한 로그인 및 합류 방식</h2>
+            <p>알바생이 앱을 설치한 뒤, 사장님의 매장에 합류하기 위한 로그인 절차입니다. 복잡한 회원 가입이 필요 없습니다.</p>
+
+            <ul>
+                <li><strong>1단계 (초대 코드 수령)</strong>: 사장님이 앱에서 직원을 먼저 등록한 후, '카카오톡 혹은 문자'로 발송한 초대 메시지를 확인합니다. 메시지에는 <strong>[매장 초대코드]</strong>가 포함되어 있습니다.</li>
+                <li><strong>2단계 (앱에서 직원용 선택)</strong>: 앱 첫 화면에서 <strong>[매장 직원 (알바생/매니저)]</strong> 영역을 터치합니다.</li>
+                <li><strong>3단계 (초대코드 입력)</strong>: 복잡한 본인 인증이나 소셜 로그인 없이, 매장에서 발급받은 <strong>[초대 코드]</strong>와 본인의 <strong>[전화번호]</strong>만 입력하면 즉시 로그인이 완료됩니다.</li>
+                <li><strong>합류 완료!</strong>: 코드를 입력하는 즉시, 사장님 매장과 연동되어 본인의 스케줄을 확인하고, 앞서 설정된 <strong>GPS 기반 출퇴근 버튼</strong>을 누를 수 있게 됩니다!</li>
+            </ul>
+        </section>
+
+        <h1 class="part-header" id="part-2"><i class="fas fa-briefcase"></i> 제2부. 사장님 핵심 기능 모아보기</h1>
+
+        <section id="section-4">
+            <h2>4. 사업장 정보 및 직원 등록 설정</h2>
+            <p>사장님 모드 진입 후 가장 먼저 해야 할 일은 매장 정보와 직원의 시급, 요일, 일하는 시간을 세팅하는 것입니다.</p>
+            
+            <div class="img-gallery">
+                <div class="img-card"><img src="images/store_setup_top.png" alt="사업장 설정"><div class="img-caption">사업장/상시근로자수 설정</div></div>
+                <div class="img-card"><img src="images/add_staff_bottom.png" alt="직원 요일 설정"><div class="img-caption">직원 근무요일/시간 지정</div></div>
+            </div>
+
+            <ul>
+                <li><strong>상시 근로자 수</strong>: 앱에 등록된 일정을 바탕으로 자동 5인 이상/미만을 판단하며, 이는 연장/야간 수당 계산에 결정적입니다.</li>
+                <li><strong>주휴수당 자동 판독</strong>: 1주 15시간 이상 근무 시 주휴수당 달성 요건이 자동으로 표시됩니다.</li>
+                <li><strong>고급 설정 (4대보험/보건증)</strong>: 사회보험 공제 항목 설정 및 보건증 만료일 사전 경고 알림도 지원합니다.</li>
+            </ul>
+        </section>
+
+        <section id="section-5">
+            <h2>5. 필수 노무 서류 자동화 교부 (근로계약서 등)</h2>
+            <p>직원 정보를 입력하면, 스마트폰 화면에서 즉각적으로 법정 서류가 완성되어 직원에게 '전자 교부' 됩니다. 수기 작성이 필요 없습니다.</p>
+            
+            <div class="img-gallery">
+                <div class="img-card"><img src="images/labor_contract.png" alt="근로계약서"><div class="img-caption">디지털 표준 근로계약서</div></div>
+                <div class="img-card"><img src="images/night_consent.png" alt="야간 동의서"><div class="img-caption">야간/휴일근로 사전 동의서</div></div>
+            </div>
+
+            <div class="callout tip">
+                <i class="fas fa-lightbulb"></i>
+                <div>
+                    <div class="callout-title">직원의 비대면 전자 서명 연동</div>
+                    <p>사장님이 서류를 매칭하면, 직원(알바앱)의 화면에 서명 요청 팝업이 뜹니다. 직원이 스마트폰으로 터치 사인을 하면 즉시 교부 완료 및 보관함 영구 저장이 진행됩니다!</p>
+                </div>
+            </div>
+        </section>
+
+
+        <section id="section-6">
+            <h2>6. 대시보드 실시간 상황판 및 급여 리포트</h2>
+            
+            <div class="img-gallery">
+                <div class="img-card"><img src="images/dashboard_3.png" alt="출석판"><div class="img-caption">실시간 직원 근무상태 현황판</div></div>
+                <div class="img-card"><img src="images/payroll_detail_2.png" alt="급여리포트"><div class="img-caption">수당 및 원천징수 자동계산</div></div>
+            </div>
+
+            <ul>
+                <li>직원들이 GPS 기반으로 출결 처리한 내용이 대시보드 타이머로 실시간 중계됩니다.</li>
+                <li>기록된 실 근무시간을 바탕으로 **주휴수당, 야간가산수당, 프리랜서(3.3%) 혹은 4대보험 원천징수세**가 소수점까지 오차 없이 자동 산출됩니다.</li>
+            </ul>
+        </section>
+
+        <h1 class="part-header" id="part-3"><i class="fas fa-mobile-alt"></i> 제3부. 직원/알바 전용 사용 가이드</h1>
+
+        <section id="section-7">
+            <h2>7. GPS 실시간 출퇴근 등록 (알바생)</h2>
+            <p>매장에 도착한 알바생이 앱을 켜면 보이는 주요 대시보드입니다.</p>
+            
+            <div class="img-gallery single-item">
+                <div class="img-card">
+                    <img src="images/alba_web_dashboard.png" alt="직원 대시보드">
+                    <div class="img-caption">알바 전용 대시보드 화면</div>
+                </div>
+            </div>
+
+            <ul>
+                <li><strong>출근하기 버튼 (GPS 검증)</strong>: 매장 반경(예: 100m) 안에 들어와서 출근 버튼을 누르면 즉시 출근이 기록됩니다. (기존 카메라 QR 스캔 방식과 병행)</li>
+                <li><strong>지각 주의</strong>: 반경 밖에서 누르거나 지각할 경우 사장님 대시보드상 패널티 기록이 남을 수 있습니다.</li>
+            </ul>
+        </section>
+
+        <section id="section-8">
+            <h2>8. 스케줄, 예상 급여명세, 노무서류 보관함 보기</h2>
+            
+            <div class="img-gallery">
+                <div class="img-card"><img src="images/alba_web_schedule.png" alt="일정"><div class="img-caption">나의 캘린더 일정</div></div>
+                <div class="img-card"><img src="images/alba_web_payroll_2.png" alt="급여명세"><div class="img-caption">세금 및 공제내역 투명 조회</div></div>
+                <div class="img-card"><img src="images/alba_web_vault.png" alt="서류보관"><div class="img-caption">전자서류 영구보관함</div></div>
+            </div>
+
+            <ul>
+                <li><strong>내 스케줄 간편 조회</strong>: 앞으로 내가 출근해야 할 요일과 일정이 캘린더에 표시됩니다. (앱에서 대타 알림 등 확장 가능)</li>
+                <li><strong>급여 상세 내역</strong>: 사장님이 계산하는 100% 동일한 기준으로, 나의 주휴수당 발생 여부와 4대보험 공제액이 투명하게 공유되어 오해를 낳지 않습니다.</li>
+                <li><strong>내 문서고(Vault)</strong>: 입사 시 서명했던 근로계약서를 분실 걱정 없이 언제든 꺼내볼 수 있습니다.</li>
+            </ul>
+        </section>
+
+    </main>
+
+    <script>
+        // Check if Not running in print or headless screenshot context to do scroll animations
+        if (!window.matchMedia('print').matches) {
+            const observerOptions = {
+                root: null,
+                rootMargin: '0px',
+                threshold: 0.1
+            };
+
+            const observer = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('visible');
+                    }
+                });
+            }, observerOptions);
+
+            document.querySelectorAll('section').forEach(section => {
+                observer.observe(section);
+            });
+        } else {
+            // If print, just make everything visible immediately.
+            document.querySelectorAll('section').forEach(section => {
+                section.classList.add('visible');
+            });
+        }
+    </script>
+</body>
+</html>

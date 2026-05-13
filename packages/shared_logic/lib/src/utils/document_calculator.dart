@@ -19,14 +19,16 @@ class DocumentCalculator {
   /// 실제로는 PayrollCalculator의 결과를 정제해서 보여주게 됨
   static Map<String, dynamic> generateWageBreakdown({
     required double grossPay, // 세전 총액
-    required bool hasMealAllowance, 
+    required bool hasMealAllowance,
   }) {
     // 1. 비과세 식대 계산
     double mealAllowance = 0.0;
-    if (hasMealAllowance && grossPay >= PayrollConstants.maxTaxFreeMealAllowance) {
+    if (hasMealAllowance &&
+        grossPay >= PayrollConstants.maxTaxFreeMealAllowance) {
       mealAllowance = PayrollConstants.maxTaxFreeMealAllowance;
     } else if (hasMealAllowance && grossPay > 0) {
-      mealAllowance = grossPay * 0.1; // 소액일 경우 임의로 10% 책정 (실제론 노무사 자문 필요영역이나 간이 계산용)
+      mealAllowance =
+          grossPay * 0.1; // 소액일 경우 임의로 10% 책정 (실제론 노무사 자문 필요영역이나 간이 계산용)
     }
 
     // 2. 과세 대상 금액 (총액 - 비과세)

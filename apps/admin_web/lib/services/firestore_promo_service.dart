@@ -22,4 +22,15 @@ class FirestorePromoService {
   Future<void> deletePromotion(String promotionId) async {
     await _db.collection('pb_promotions').doc(promotionId).delete();
   }
+
+  Future<void> saveNotice(String title, String content) async {
+    final docRef = _db.collection('pb_notices').doc();
+    await docRef.set({
+      'NoticeID': docRef.id,
+      'Title': title,
+      'Content': content,
+      'CreatedAt': FieldValue.serverTimestamp(),
+      'Source': 'NotebookLM',
+    });
+  }
 }

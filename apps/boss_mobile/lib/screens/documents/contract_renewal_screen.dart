@@ -32,21 +32,33 @@ class _ContractRenewalScreenState extends State<ContractRenewalScreen> {
       final now = AppClock.now();
       
       for (final worker in _pendingWorkers) {
-        // 1. Update Worker Wage in DB
-        worker.hourlyWage = PayrollConstants.legalMinimumWage;
+        // 1. Update Worker Wage in DB (★ 시급 인하 방지: 기존 시급이 높으면 유지)
+        if (worker.hourlyWage < PayrollConstants.legalMinimumWage) {
+          worker.hourlyWage = PayrollConstants.legalMinimumWage;
+        }
         await WorkerService.save(worker);
 
         // 2. Generate LaborDocument stub for signature
+        final docContent = '본 합의서에 따라 시급이 ${PayrollConstants.legalMinimumWage.toInt()}원으로 상향 적용됩니다.';
+        final docId = '${worker.id}_amendment_${PayrollConstants.minimumWageEffectiveYear}';
+        final documentHash = SecurityMetadataHelper.generateDocumentHash(
+          type: DocumentType.wage_amendment.name,
+          staffId: worker.id,
+          content: docContent,
+          createdAt: now.toIso8601String(),
+        );
+
         final doc = LaborDocument(
-          id: '${worker.id}_amendment_${PayrollConstants.minimumWageEffectiveYear}',
+          id: docId,
           storeId: worker.storeId,
           staffId: worker.id,
           type: DocumentType.wage_amendment,
           title: '${PayrollConstants.minimumWageEffectiveYear}년 임금 변경 합의서',
-          content: '본 합의서에 따라 시급이 ${PayrollConstants.legalMinimumWage.toInt()}원으로 상향 적용됩니다.',
+          content: docContent,
           createdAt: now,
-          status: 'sent', // The doc is "sent" to the employee to fetch and sign
+          status: 'sent',
           expiryDate: DocumentCalculator.calculateExpiryDate(now),
+          documentHash: documentHash,
         );
         
         await db.saveDocument(doc);

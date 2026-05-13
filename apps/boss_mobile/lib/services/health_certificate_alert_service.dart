@@ -111,8 +111,17 @@ class HealthCertificateAlertService {
         ? '[보건증 만료] ${staff.name} (${staff.phone})'
         : '[보건증 임박-$daysLeft일] ${staff.name} (${staff.phone})';
 
+    // notificationQueue update는 차단됨 — 이미 적재된 알림은 skip (idempotent)
+    Future<void> enqueueIfAbsent(String docId, Map<String, dynamic> data) async {
+      final ref = _db.collection('notificationQueue').doc(docId);
+      final snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set(data);
+      }
+    }
+
     if (channels['pushBoss'] == true && ownerUid.isNotEmpty) {
-      await _db.collection('notificationQueue').doc('${alertId}_pushBoss').set({
+      await enqueueIfAbsent('${alertId}_pushBoss', {
         'dedupeKey': '${alertId}_pushBoss',
         'storeId': storeId,
         'alertId': alertId,
@@ -122,11 +131,11 @@ class HealthCertificateAlertService {
         'message': message,
         'level': level,
         'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
     }
 
     if (channels['pushStaff'] == true) {
-      await _db.collection('notificationQueue').doc('${alertId}_pushStaff').set({
+      await enqueueIfAbsent('${alertId}_pushStaff', {
         'dedupeKey': '${alertId}_pushStaff',
         'storeId': storeId,
         'alertId': alertId,
@@ -136,11 +145,11 @@ class HealthCertificateAlertService {
         'message': message,
         'level': level,
         'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
     }
 
     if (channels['sms'] == true) {
-      await _db.collection('notificationQueue').doc('${alertId}_sms').set({
+      await enqueueIfAbsent('${alertId}_sms', {
         'dedupeKey': '${alertId}_sms',
         'storeId': storeId,
         'alertId': alertId,
@@ -150,11 +159,11 @@ class HealthCertificateAlertService {
         'message': message,
         'level': level,
         'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
     }
 
     if (channels['kakao'] == true) {
-      await _db.collection('notificationQueue').doc('${alertId}_kakao').set({
+      await enqueueIfAbsent('${alertId}_kakao', {
         'dedupeKey': '${alertId}_kakao',
         'storeId': storeId,
         'alertId': alertId,
@@ -164,7 +173,7 @@ class HealthCertificateAlertService {
         'message': message,
         'level': level,
         'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
     }
   }
 

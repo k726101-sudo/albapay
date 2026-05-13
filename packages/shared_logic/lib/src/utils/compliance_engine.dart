@@ -2,10 +2,10 @@ import '../models/store_model.dart';
 import '../models/attendance_model.dart';
 
 enum ComplianceStatus {
-  safe,        // 정상 (40시간 미만)
-  warning40,   // 주의 (40시간 초과, 연장수당 발생)
-  critical48,  // 긴급 (48시간 초과, 한도 임박)
-  blocked52,   // 차단 (52시간 도달)
+  safe, // 정상 (40시간 미만)
+  warning40, // 주의 (40시간 초과, 연장수당 발생)
+  critical48, // 긴급 (48시간 초과, 한도 임박)
+  blocked52, // 차단 (52시간 도달)
 }
 
 class ComplianceResult {
@@ -40,7 +40,9 @@ class ComplianceEngine {
   }
 
   /// 특정 기간(보통 금주)의 누적 근로 시간을 계산합니다.
-  static double calculateWeeklyHours(List<Attendance> currentWeeklyAttendances) {
+  static double calculateWeeklyHours(
+    List<Attendance> currentWeeklyAttendances,
+  ) {
     double totalMinutes = 0;
     for (var att in currentWeeklyAttendances) {
       totalMinutes += att.workedMinutes;
@@ -56,7 +58,7 @@ class ComplianceEngine {
   }) {
     final List<String> warnings = [];
     final List<String> errors = [];
-    
+
     // 현재까지의 확정 근로 시간
     final double currentHours = calculateWeeklyHours(currentWeeklyAttendances);
     // 이번 근무를 마쳤을 때의 예상 총 시간
@@ -68,7 +70,9 @@ class ComplianceEngine {
     if (store.isFiveOrMore) {
       if (totalProjectedHours >= 52) {
         status = ComplianceStatus.blocked52;
-        errors.add('법정 최대 근로시간(주 52시간)에 도달했습니다. 사장님의 특별 승인 없이는 기록을 추가할 수 없습니다.');
+        errors.add(
+          '법정 최대 근로시간(주 52시간)에 도달했습니다. 사장님의 특별 승인 없이는 기록을 추가할 수 없습니다.',
+        );
       } else if (totalProjectedHours > 48) {
         status = ComplianceStatus.critical48;
         warnings.add('법정 근로 한도(52시간) 임박! 긴급 관리가 필요합니다.');

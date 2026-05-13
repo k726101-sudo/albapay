@@ -55,11 +55,21 @@ class Worker extends HiveObject {
     this.specialExtensionReason,
     this.usedAnnualLeave = 0.0,
     this.annualLeaveManualAdjustment = 0.0,
+    this.annualLeaveInitialAdjustment = 0.0,
+    this.annualLeaveInitialAdjustmentReason = '',
     this.leaveUsageLogs = const [],
     this.inviteCode,
     this.previousMonthAdjustment = 0.0,
     this.manualAverageDailyWage = 0.0,
     this.employeeId,
+    this.leavePromotionLogsJson = '',
+    this.wageType = 'hourly',
+    this.monthlyWage = 0.0,
+    this.fixedOvertimeHours = 0.0,
+    this.fixedOvertimePay = 0.0,
+    this.mealTaxExempt = false,
+    this.isPaperContract = false,
+    this.wageHistoryJson = '',
   });
 
   @HiveField(0)
@@ -198,6 +208,14 @@ class Worker extends HiveObject {
   @HiveField(48, defaultValue: 0.0)
   double annualLeaveManualAdjustment;
 
+  /// 앱 도입 이전 기초 연차 개수 (사장님 수동 입력)
+  @HiveField(53, defaultValue: 0.0)
+  double annualLeaveInitialAdjustment;
+
+  /// 기초 연차 수정 사유 로그
+  @HiveField(54, defaultValue: '')
+  String annualLeaveInitialAdjustmentReason;
+
   @HiveField(49)
   String? inviteCode;
 
@@ -207,6 +225,38 @@ class Worker extends HiveObject {
   double manualAverageDailyWage;
   @HiveField(52)
   String? employeeId;
+
+  /// 연차 사용촉진 로그 (JSON 직렬화 저장)
+  @HiveField(55, defaultValue: '')
+  String leavePromotionLogsJson;
+
+  /// 급여 형태: 'hourly' | 'monthly'
+  @HiveField(56, defaultValue: 'hourly')
+  String wageType;
+
+  /// 월급 총액 (월급제일 때만 사용)
+  @HiveField(57, defaultValue: 0.0)
+  double monthlyWage;
+
+  /// 포괄임금제: 고정 연장근로시간 (시간 단위)
+  @HiveField(58, defaultValue: 0.0)
+  double fixedOvertimeHours;
+
+  /// 포괄임금제: 고정 연장수당 (원 단위, 시스템 자동 역산)
+  @HiveField(59, defaultValue: 0.0)
+  double fixedOvertimePay;
+
+  /// 식대 비과세 적용 여부 (사장님 선택)
+  @HiveField(60, defaultValue: false)
+  bool mealTaxExempt;
+
+  /// 서면 계약 완료 여부
+  @HiveField(61, defaultValue: false)
+  bool isPaperContract;
+
+  /// 시급 변경 이력 (JSON 직렬화 저장). `[{"effectiveDate":"2026-01-01","hourlyWage":10320},...]`
+  @HiveField(62, defaultValue: '')
+  String wageHistoryJson;
 
   Map<String, dynamic> toMap() => {
         'name': name,
@@ -256,11 +306,21 @@ class Worker extends HiveObject {
         'specialExtensionReason': specialExtensionReason,
         'usedAnnualLeave': usedAnnualLeave,
         'annualLeaveManualAdjustment': annualLeaveManualAdjustment,
+        'annualLeaveInitialAdjustment': annualLeaveInitialAdjustment,
+        'annualLeaveInitialAdjustmentReason': annualLeaveInitialAdjustmentReason,
         'leaveUsageLogs': leaveUsageLogs.map((l) => l.toMap()).toList(),
         if (inviteCode != null) 'inviteCode': inviteCode,
         'previousMonthAdjustment': previousMonthAdjustment,
         'manualAverageDailyWage': manualAverageDailyWage,
         if (employeeId != null) 'employeeId': employeeId,
+        'leavePromotionLogsJson': leavePromotionLogsJson,
+        'wageType': wageType,
+        'monthlyWage': monthlyWage,
+        'fixedOvertimeHours': fixedOvertimeHours,
+        'fixedOvertimePay': fixedOvertimePay,
+        'mealTaxExempt': mealTaxExempt,
+        'isPaperContract': isPaperContract,
+        'wageHistoryJson': wageHistoryJson,
       };
 
   factory Worker.fromMap(String id, Map<String, dynamic> map) => Worker(
@@ -325,6 +385,8 @@ class Worker extends HiveObject {
         specialExtensionReason: map['specialExtensionReason']?.toString(),
         usedAnnualLeave: (map['usedAnnualLeave'] as num?)?.toDouble() ?? 0.0,
         annualLeaveManualAdjustment: (map['annualLeaveManualAdjustment'] as num?)?.toDouble() ?? 0.0,
+        annualLeaveInitialAdjustment: (map['annualLeaveInitialAdjustment'] as num?)?.toDouble() ?? 0.0,
+        annualLeaveInitialAdjustmentReason: map['annualLeaveInitialAdjustmentReason']?.toString() ?? '',
         leaveUsageLogs: (map['leaveUsageLogs'] as List?)
                 ?.map((e) => LeaveUsageLog.fromMap((e as Map).cast<String, dynamic>()))
                 .toList() ??
@@ -333,6 +395,14 @@ class Worker extends HiveObject {
         previousMonthAdjustment: (map['previousMonthAdjustment'] as num?)?.toDouble() ?? 0.0,
         manualAverageDailyWage: (map['manualAverageDailyWage'] as num?)?.toDouble() ?? 0.0,
         employeeId: map['employeeId']?.toString(),
+        leavePromotionLogsJson: map['leavePromotionLogsJson']?.toString() ?? '',
+        wageType: map['wageType']?.toString() ?? 'hourly',
+        monthlyWage: (map['monthlyWage'] as num?)?.toDouble() ?? 0.0,
+        fixedOvertimeHours: (map['fixedOvertimeHours'] as num?)?.toDouble() ?? 0.0,
+        fixedOvertimePay: (map['fixedOvertimePay'] as num?)?.toDouble() ?? 0.0,
+        mealTaxExempt: map['mealTaxExempt'] as bool? ?? false,
+        isPaperContract: map['isPaperContract'] == true,
+        wageHistoryJson: map['wageHistoryJson']?.toString() ?? '',
       );
 
   Worker copyWith({
@@ -385,11 +455,21 @@ class Worker extends HiveObject {
     String? specialExtensionReason,
     double? usedAnnualLeave,
     double? annualLeaveManualAdjustment,
+    double? annualLeaveInitialAdjustment,
+    String? annualLeaveInitialAdjustmentReason,
     List<LeaveUsageLog>? leaveUsageLogs,
     String? inviteCode,
     double? previousMonthAdjustment,
     double? manualAverageDailyWage,
     String? employeeId,
+    String? leavePromotionLogsJson,
+    String? wageType,
+    double? monthlyWage,
+    double? fixedOvertimeHours,
+    double? fixedOvertimePay,
+    bool? mealTaxExempt,
+    bool? isPaperContract,
+    String? wageHistoryJson,
   }) =>
       Worker(
         id: id ?? this.id,
@@ -441,11 +521,21 @@ class Worker extends HiveObject {
         specialExtensionReason: specialExtensionReason ?? this.specialExtensionReason,
         usedAnnualLeave: usedAnnualLeave ?? this.usedAnnualLeave,
         annualLeaveManualAdjustment: annualLeaveManualAdjustment ?? this.annualLeaveManualAdjustment,
+        annualLeaveInitialAdjustment: annualLeaveInitialAdjustment ?? this.annualLeaveInitialAdjustment,
+        annualLeaveInitialAdjustmentReason: annualLeaveInitialAdjustmentReason ?? this.annualLeaveInitialAdjustmentReason,
         leaveUsageLogs: leaveUsageLogs ?? this.leaveUsageLogs,
         inviteCode: inviteCode ?? this.inviteCode,
         previousMonthAdjustment: previousMonthAdjustment ?? this.previousMonthAdjustment,
         manualAverageDailyWage: manualAverageDailyWage ?? this.manualAverageDailyWage,
         employeeId: employeeId ?? this.employeeId,
+        leavePromotionLogsJson: leavePromotionLogsJson ?? this.leavePromotionLogsJson,
+        wageType: wageType ?? this.wageType,
+        monthlyWage: monthlyWage ?? this.monthlyWage,
+        fixedOvertimeHours: fixedOvertimeHours ?? this.fixedOvertimeHours,
+        fixedOvertimePay: fixedOvertimePay ?? this.fixedOvertimePay,
+        mealTaxExempt: mealTaxExempt ?? this.mealTaxExempt,
+        isPaperContract: isPaperContract ?? this.isPaperContract,
+        wageHistoryJson: wageHistoryJson ?? this.wageHistoryJson,
       );
 }
 

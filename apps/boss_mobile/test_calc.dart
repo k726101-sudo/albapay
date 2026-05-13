@@ -12,6 +12,7 @@ void main() {
     allowanceAmounts: [],
     usedAnnualLeave: 0,
     isVirtual: true,
+    weeklyHolidayDay: 0,
   );
 
   final inDt = DateTime(2026, 4, 1, 9, 0); // April 1 (Wed)

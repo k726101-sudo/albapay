@@ -154,6 +154,15 @@ class _WorkerRecordScreenState extends State<WorkerRecordScreen> {
         'specialNote': _specialNoteCtrl.text,
       };
 
+      final newDataJson = jsonEncode(data);
+      final newHash = SecurityMetadataHelper.generateDocumentHash(
+        type: widget.document.type.name,
+        staffId: widget.document.staffId,
+        content: widget.document.content,
+        dataJson: newDataJson,
+        createdAt: widget.document.createdAt.toIso8601String(),
+      );
+
       await FirebaseFirestore.instance
           .collection('stores')
           .doc(widget.document.storeId)
@@ -162,7 +171,8 @@ class _WorkerRecordScreenState extends State<WorkerRecordScreen> {
           .set({
         ...widget.document.toMap(),
         'status': 'completed',
-        'dataJson': jsonEncode(data),
+        'dataJson': newDataJson,
+        'documentHash': newHash,
       }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('Failed to save document status: $e');

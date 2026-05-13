@@ -12,6 +12,8 @@
     "lint": "echo \"no lint configured\""
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1045.0",
+    "@aws-sdk/s3-request-presigner": "^3.1045.0",
     "express": "^4.21.2",
     "firebase-admin": "^13.0.0",
     "firebase-functions": "^6.0.1"
@@ -21,4 +23,3 @@
     "typescript": "^5.9.2"
   }
 }
-

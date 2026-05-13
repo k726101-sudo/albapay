@@ -22,6 +22,8 @@ class Store {
   final String employeeSizeMode;
   final int attendanceGracePeriodMinutes; // 출퇴근 오차 허용 범위 (분)
   final String? branchCode;
+  final bool gpsAttendanceEnabled; // GPS 출퇴근 검증 활성화 여부
+  final int gpsRadius; // GPS 반경 (미터, 기본 100m)
 
   Store({
     required this.id,
@@ -43,49 +45,57 @@ class Store {
     this.employeeSizeMode = 'auto',
     this.attendanceGracePeriodMinutes = 5,
     this.branchCode,
+    this.gpsAttendanceEnabled = false,
+    this.gpsRadius = 100,
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'ownerId': ownerId,
-        'representativeName': representativeName,
-        'representativePhoneNumber': representativePhoneNumber,
-        'address': address,
-        'latitude': latitude,
-        'longitude': longitude,
-        'wifiSsid': wifiSsid,
-        'wifiBssid': wifiBssid,
-        'settlementStartDay': settlementStartDay,
-        'settlementEndDay': settlementEndDay,
-        'payday': payday,
-        'isFiveOrMore': isFiveOrMore,
-        'isFiveOrMore_CalculatedValue': isFiveOrMore_CalculatedValue,
-        'isFiveOrMore_ChangeReason': isFiveOrMore_ChangeReason,
-        'employeeSizeMode': employeeSizeMode,
-        'attendanceGracePeriodMinutes': attendanceGracePeriodMinutes,
-        'branchCode': branchCode,
-      };
+    'id': id,
+    'name': name,
+    'ownerId': ownerId,
+    'representativeName': representativeName,
+    'representativePhoneNumber': representativePhoneNumber,
+    'address': address,
+    'latitude': latitude,
+    'longitude': longitude,
+    'wifiSsid': wifiSsid,
+    'wifiBssid': wifiBssid,
+    'settlementStartDay': settlementStartDay,
+    'settlementEndDay': settlementEndDay,
+    'payday': payday,
+    'isFiveOrMore': isFiveOrMore,
+    'isFiveOrMore_CalculatedValue': isFiveOrMore_CalculatedValue,
+    'isFiveOrMore_ChangeReason': isFiveOrMore_ChangeReason,
+    'employeeSizeMode': employeeSizeMode,
+    'attendanceGracePeriodMinutes': attendanceGracePeriodMinutes,
+    'branchCode': branchCode,
+    'gpsAttendanceEnabled': gpsAttendanceEnabled,
+    'gpsRadius': gpsRadius,
+  };
 
   factory Store.fromJson(Map<String, dynamic> json) => Store(
-        id: json['id'],
-        name: json['name'],
-        ownerId: json['ownerId'],
-        representativeName: json['representativeName']?.toString() ?? '',
-        representativePhoneNumber: json['representativePhoneNumber']?.toString() ?? '',
-        address: json['address']?.toString() ?? '',
-        latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
-        longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
-        wifiSsid: json['wifiSsid']?.toString(),
-        wifiBssid: json['wifiBssid']?.toString(),
-        settlementStartDay: (json['settlementStartDay'] as num?)?.toInt() ?? 1,
-        settlementEndDay: (json['settlementEndDay'] as num?)?.toInt() ?? 31,
-        payday: (json['payday'] as num?)?.toInt() ?? 1,
-        isFiveOrMore: json['isFiveOrMore'] ?? false,
-        isFiveOrMore_CalculatedValue: json['isFiveOrMore_CalculatedValue'] ?? false,
-        isFiveOrMore_ChangeReason: json['isFiveOrMore_ChangeReason']?.toString() ?? '',
-        employeeSizeMode: json['employeeSizeMode']?.toString() ?? 'auto',
-        attendanceGracePeriodMinutes: json['attendanceGracePeriodMinutes'] ?? 5,
-        branchCode: json['branchCode']?.toString(),
-      );
+    id: json['id'],
+    name: json['name'],
+    ownerId: json['ownerId'],
+    representativeName: json['representativeName']?.toString() ?? '',
+    representativePhoneNumber:
+        json['representativePhoneNumber']?.toString() ?? '',
+    address: json['address']?.toString() ?? '',
+    latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
+    longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
+    wifiSsid: json['wifiSsid']?.toString(),
+    wifiBssid: json['wifiBssid']?.toString(),
+    settlementStartDay: (json['settlementStartDay'] as num?)?.toInt() ?? 1,
+    settlementEndDay: (json['settlementEndDay'] as num?)?.toInt() ?? 31,
+    payday: (json['payday'] as num?)?.toInt() ?? 1,
+    isFiveOrMore: json['isFiveOrMore'] ?? false,
+    isFiveOrMore_CalculatedValue: json['isFiveOrMore_CalculatedValue'] ?? false,
+    isFiveOrMore_ChangeReason:
+        json['isFiveOrMore_ChangeReason']?.toString() ?? '',
+    employeeSizeMode: json['employeeSizeMode']?.toString() ?? 'auto',
+    attendanceGracePeriodMinutes: json['attendanceGracePeriodMinutes'] ?? 5,
+    branchCode: json['branchCode']?.toString(),
+    gpsAttendanceEnabled: json['gpsAttendanceEnabled'] ?? false,
+    gpsRadius: (json['gpsRadius'] as num?)?.toInt() ?? 100,
+  );
 }

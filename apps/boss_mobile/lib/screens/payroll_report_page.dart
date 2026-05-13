@@ -22,6 +22,63 @@ class PayrollReportPage extends StatefulWidget {
 class _PayrollReportPageState extends State<PayrollReportPage> {
   final Map<String, bool> _manualWeeklyHolidayApproval = <String, bool>{};
 
+  int _monthOffset = 0;
+  bool _isInitialized = false;
+
+  DateTime _getBaseDate(DateTime now, int offset) {
+    int y = now.year;
+    int m = now.month + offset;
+    int d = now.day;
+    while (m <= 0) {
+      m += 12;
+      y -= 1;
+    }
+    while (m > 12) {
+      m -= 12;
+      y += 1;
+    }
+    int maxDays = DateTime(y, m + 1, 0).day;
+    return DateTime(y, m, d > maxDays ? maxDays : d);
+  }
+
+  Widget _buildPeriodNavigator(({DateTime start, DateTime end}) period) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(
+            onPressed: () => setState(() => _monthOffset--),
+            icon: const Icon(Icons.chevron_left, color: Colors.white),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+          ),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                '${period.start.year}.${period.start.month.toString().padLeft(2, '0')}.${period.start.day.toString().padLeft(2, '0')} '
+                '~ ${period.end.year}.${period.end.month.toString().padLeft(2, '0')}.${period.end.day.toString().padLeft(2, '0')}',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => setState(() => _monthOffset++),
+            icon: const Icon(Icons.chevron_right, color: Colors.white),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _pageDot({required bool active}) {
     return Container(
       width: 6,
@@ -60,7 +117,17 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                 final storeData = storeSnapshot.data?.data();
                 final settlementStartDay = (storeData?['settlementStartDay'] as num?)?.toInt() ?? 1;
                 final settlementEndDay = (storeData?['settlementEndDay'] as num?)?.toInt() ?? 31;
-                final period = _computeSettlementPeriod(now, settlementStartDay, settlementEndDay);
+                
+                if (!_isInitialized) {
+                  final payday = (storeData?['payday'] as num?)?.toInt() ?? 1;
+                  if (now.day < payday) {
+                    _monthOffset = -1;
+                  }
+                  _isInitialized = true;
+                }
+                
+                final baseDate = _getBaseDate(now, _monthOffset);
+                final period = _computeSettlementPeriod(baseDate, settlementStartDay, settlementEndDay);
 
                 final staffList = Hive.box<Worker>('workers').values.where((w) {
                   if (w.status == 'active') return true;
@@ -94,6 +161,9 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                     final staffSummaries = <String, PayrollCalculationResult>{};
                     final staffTardyCount = <String, int>{};
                     final staffAttendanceMap = <String, List<Attendance>>{};
+                    final staffWorkerDataMap = <String, PayrollWorkerData>{};
+                    final staffAllHistoryMap = <String, List<Attendance>>{};
+                    final staffEffectiveWageMap = <String, double>{};
 
                     for (final staff in staffList) {
                       final staffAttendance = periodAttendance.where((a) => a.staffId == staff.id).toList();
@@ -147,6 +217,19 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                         deductHealthInsurance: staff.deductHealthInsurance,
                         deductEmploymentInsurance: staff.deductEmploymentInsurance,
                         isVirtual: staff.name.contains('가상'),
+                        breakStartTime: staff.breakStartTime,
+                        breakEndTime: staff.breakEndTime,
+                        graceMinutes: (storeData?['attendanceGracePeriodMinutes'] as num?)?.toInt() ?? 0,
+                        wageType: staff.wageType,
+                        monthlyWage: staff.monthlyWage,
+                        fixedOvertimeHours: staff.fixedOvertimeHours,
+                        fixedOvertimePay: staff.fixedOvertimePay,
+                        mealTaxExempt: staff.mealTaxExempt,
+                        isProbation: staff.isProbation,
+                        probationMonths: staff.probationMonths,
+                        wageHistoryJson: staff.wageHistoryJson,
+                        weeklyHolidayDay: staff.weeklyHolidayDay,
+                        promotionLogs: _parsePromotionLogs(staff.leavePromotionLogsJson),
                       );
 
                       final isInactive = staff.status == 'inactive';
@@ -171,6 +254,10 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                       );
 
                       staffSummaries[staff.id] = result;
+                      staffWorkerDataMap[staff.id] = workerData;
+                      staffAllHistoryMap[staff.id] = staffAllHistory;
+                      staffEffectiveWageMap[staff.id] = effectiveWage;
+                      
                       totalLaborCost += result.netPay;
                     }
 
@@ -267,7 +354,8 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Text('이번 달 총 예상 인건비', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                                      _buildPeriodNavigator(period),
+                                      const Text('해당 기간 총 예상 인건비', style: TextStyle(color: Colors.white70, fontSize: 14)),
                                       const SizedBox(height: 8),
                                       Text(
                                         '${totalLaborCost.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원',
@@ -297,14 +385,24 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                                       }
 
                                       final displayedTotal = summary.netPay;
-
+                                      
+                                      final workerData = staffWorkerDataMap[staff.id]!;
+                                      final staffAllHistory = staffAllHistoryMap[staff.id]!;
+                                      final effectiveWage = staffEffectiveWageMap[staff.id]!;
+                                      
+                                      final filteredAttendance = attendance
+                                          .where((a) => !a.clockIn.isAfter(localPeriodEnd.add(const Duration(hours: 23, minutes: 59))))
+                                          .toList();
+                      final dbMinWage = (storeData?['minimumHourlyWage'] as num?)?.toDouble();
+                                      final minWage = (dbMinWage != null && dbMinWage > 0) ? dbMinWage : PayrollConstants.legalMinimumWage;
+                                      
                                       return Card(
                                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   elevation: 0,
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(12),
-                                    onTap: () => _showPayrollDetailModal(context, staff, summary, tardyCount, displayedTotal, attendance, localPeriodEnd),
+                                    onTap: () => _showPayrollDetailModal(context, staff, summary, tardyCount, displayedTotal, filteredAttendance, period.start, localPeriodEnd, workerData, isFiveOrMoreByStore, staffAllHistory, effectiveWage, minWage),
                                     child: Padding(
                                       padding: const EdgeInsets.all(16),
                                       child: Row(
@@ -374,7 +472,8 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
     );
   }
 
-  void _showPayrollDetailModal(BuildContext context, Worker staff, PayrollCalculationResult summary, int tardyCount, double displayedTotal, List<Attendance> shifts, DateTime periodEnd) {
+  void _showPayrollDetailModal(BuildContext context, Worker staff, PayrollCalculationResult initialSummary, int tardyCount, double initialDisplayedTotal, List<Attendance> shifts, DateTime periodStart, DateTime periodEnd, PayrollWorkerData workerData, bool isFiveOrMore, List<Attendance> allHistoricalAttendances, double effectiveWage, [double minWage = 0]) {
+    final sortedShifts = List<Attendance>.from(shifts)..sort((a, b) => b.clockIn.compareTo(a.clockIn));
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -386,7 +485,11 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
           maxChildSize: 0.9,
           expand: false,
           builder: (_, scrollController) {
-            return Container(
+            PayrollCalculationResult summary = initialSummary;
+            PayrollWorkerData currentWorkerData = workerData;
+            return StatefulBuilder(
+              builder: (context, setStateModal) {
+                return Container(
               padding: const EdgeInsets.all(24),
               child: ListView(
                 controller: scrollController,
@@ -464,20 +567,134 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                       ),
                     ),
                   ),
-                  _detailRow('기본급', '${summary.basePay.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원'),
-                  const SizedBox(height: 12),
-                  
-                  if (summary.premiumPay > 0)
-                    _detailRow('가산 수당 (연장/야간/휴일)', '+${summary.premiumPay.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원', color: Colors.orange.shade800),
-                  
-                  if (summary.weeklyHolidayPay > 0)
-                    _detailRow('주휴 수당', '+${summary.weeklyHolidayPay.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원'),
-                    
-                  if (summary.breakPay > 0)
-                    _detailRow('근로장려수당', '+${summary.breakPay.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]},")}원'),
-
-                  if (summary.otherAllowancePay > 0)
-                    _detailRow('기타 수당', '+${summary.otherAllowancePay.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원'),
+                  Builder(
+                    builder: (context) {
+                      String _fH(double h) => h == h.toInt() ? h.toInt().toString() : h.toStringAsFixed(1);
+                      String _fW(num amt) => amt.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+                      final hw = staff.hourlyWage;
+                      final wH = hw > 0 ? summary.weeklyHolidayPay / hw : 0.0;
+                      // 시급 분리 표시 (임금변경합의서 반영)
+                      final breakdown = summary.basePayBreakdownByWage;
+                      String basePaySubtext;
+                      if (breakdown.length > 1) {
+                        basePaySubtext = breakdown.entries.map((e) => '${_fH(e.value)}시간 × ${_fW(e.key)}원').join(' + ');
+                      } else {
+                        basePaySubtext = '${_fH(summary.pureLaborHours)}시간 × ${_fW(hw)}원';
+                      }
+                      return Column(
+                        children: [
+                          _detailRow('기본급', '${_fW(summary.basePay)}원', subtext: basePaySubtext),
+                          const SizedBox(height: 12),
+                          if (summary.premiumPay > 0)
+                            _detailRow('가산 수당 (연장/야간/휴일)', '+${_fW(summary.premiumPay)}원', color: Colors.orange.shade800, subtext: '${_fH(summary.premiumHours)}시간 × ${_fW(hw * 0.5)}원'),
+                          // ── 주휴 수당 ──
+                          // 토글 스위치 노출 조건:
+                          //   1) 결근으로 주휴수당이 차단된 경우 (weeklyHolidayBlockedByAbsence)
+                          //   2) 15시간 미만 계약자가 대타로 15시간 초과 (hasExtraWeekOver15)
+                          Builder(builder: (_) {
+                            final showToggle = summary.weeklyHolidayBlockedByAbsence || summary.hasExtraWeekOver15;
+                            final showRow = summary.weeklyHolidayPay > 0 || showToggle;
+                            if (!showRow) return const SizedBox.shrink();
+                            return Container(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              decoration: BoxDecoration(
+                                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('주휴 수당', style: TextStyle(fontSize: 14, color: Colors.grey.shade800)),
+                                        if (summary.weeklyHolidayPay > 0)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text('${_fH(wH)}시간 × ${_fW(hw)}원 (주휴 발생 기준이 되는 시간 명시)', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                                          ),
+                                        if (showToggle)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              summary.weeklyHolidayBlockedByAbsence
+                                                  ? (currentWorkerData.manualWeeklyHolidayApproval
+                                                      ? '⚠️ 결근 발생 (주휴수당 공제 가능)'
+                                                      : '⚠️ 결근으로 주휴수당이 공제되었습니다')
+                                                  : '⚠️ 15시간 미만 계약이지만 초과 근무가 감지되었습니다',
+                                              style: TextStyle(
+                                                fontSize: 11, 
+                                                color: summary.weeklyHolidayBlockedByAbsence && currentWorkerData.manualWeeklyHolidayApproval 
+                                                    ? Colors.red.shade600 
+                                                    : Colors.orange.shade700,
+                                                fontWeight: summary.weeklyHolidayBlockedByAbsence && currentWorkerData.manualWeeklyHolidayApproval
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '+${_fW(summary.weeklyHolidayPay)}원',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: (!showToggle || currentWorkerData.manualWeeklyHolidayApproval) ? Colors.black : Colors.grey,
+                                          decoration: (showToggle && !currentWorkerData.manualWeeklyHolidayApproval) ? TextDecoration.lineThrough : null,
+                                        ),
+                                      ),
+                                      if (showToggle) ...[
+                                        const SizedBox(width: 8),
+                                        Switch(
+                                          value: currentWorkerData.manualWeeklyHolidayApproval,
+                                          activeTrackColor: Colors.blue.withValues(alpha: 0.5),
+                                          activeThumbColor: Colors.blue,
+                                          onChanged: (val) async {
+                                            currentWorkerData.manualWeeklyHolidayApproval = val;
+                                            _manualWeeklyHolidayApproval[staff.id] = val;
+                                            
+                                            // 즉각적 계산 엔진 호출
+                                            summary = PayrollCalculator.calculate(
+                                              workerData: currentWorkerData,
+                                              shifts: shifts.where((a) => !a.clockIn.isAfter(periodEnd.add(const Duration(hours: 23, minutes: 59)))).toList(),
+                                              periodStart: periodStart,
+                                              periodEnd: periodEnd,
+                                              hourlyRate: effectiveWage,
+                                              isFiveOrMore: isFiveOrMore,
+                                              allHistoricalAttendances: allHistoricalAttendances,
+                                            );
+                                            
+                                            // 모달 내부 실시간 업데이트
+                                            setStateModal(() {});
+                                            // 백그라운드 카드 실시간 업데이트
+                                            setState(() {});
+                                            
+                                            // 백엔드 동기화 (비동기)
+                                            await DatabaseService().upsertWorker(
+                                              storeId: staff.storeId,
+                                              workerId: staff.id,
+                                              data: {'weeklyHolidayPay': val},
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                          if (summary.breakPay > 0)
+                            _detailRow('유급휴게수당', '+${_fW(summary.breakPay)}원', subtext: '${_fH(summary.paidBreakHours)}시간 × ${_fW(hw)}원 (휴게로 인정해 준 총시간 명시)'),
+                          if (summary.otherAllowancePay > 0)
+                            _detailRow('기타 수당', '+${_fW(summary.otherAllowancePay)}원'),
+                        ],
+                      );
+                    },
+                  ),
 
                   if (summary.annualLeaveAllowancePay > 0)
                     _detailRow('퇴사 연차정산 수당', '+${summary.annualLeaveAllowancePay.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원', color: Colors.redAccent, isBold: true),
@@ -545,15 +762,53 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                     ],
                   ),
                   const SizedBox(height: 30),
-                  const Text('일별 근무 내역', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('일별 근무 내역', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      TextButton.icon(
+                        onPressed: () => _showAddAttendanceDialog(context, staff),
+                        icon: const Icon(Icons.add_circle_outline, size: 16, color: Color(0xFF1a6ebd)),
+                        label: const Text('수동 추가', style: TextStyle(fontSize: 12, color: Color(0xFF1a6ebd))),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
-                  if (shifts.isEmpty)
+                  if (sortedShifts.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 20),
                       child: Center(child: Text('기록된 근무 내역이 없습니다.', style: TextStyle(color: Colors.grey, fontSize: 13))),
                     )
                   else
-                    ...shifts.reversed.map((a) => _attendanceLogRow(a, staff)),
+                    ...sortedShifts.map((a) => _attendanceLogRow(a, staff, onUpdate: (updated, isDeleted) {
+                      if (isDeleted) {
+                        sortedShifts.removeWhere((x) => x.id == a.id);
+                        allHistoricalAttendances.removeWhere((x) => x.id == a.id);
+                      } else if (updated != null) {
+                        final idx = sortedShifts.indexWhere((x) => x.id == a.id);
+                        if (idx != -1) sortedShifts[idx] = updated;
+                        final idxAll = allHistoricalAttendances.indexWhere((x) => x.id == a.id);
+                        if (idxAll != -1) {
+                          allHistoricalAttendances[idxAll] = updated;
+                        } else {
+                          allHistoricalAttendances.add(updated);
+                        }
+                        sortedShifts.sort((a, b) => b.clockIn.compareTo(a.clockIn));
+                      }
+                      
+                      try {
+                        summary = PayrollCalculator.calculate(
+                          workerData: currentWorkerData,
+                          shifts: sortedShifts,
+                          periodStart: periodStart,
+                          periodEnd: periodEnd,
+                          hourlyRate: effectiveWage,
+                          isFiveOrMore: isFiveOrMore,
+                          allHistoricalAttendances: allHistoricalAttendances,
+                        );
+                      } catch (_) {}
+                      setStateModal(() {});
+                    })),
                   
                   const Divider(height: 40),
                   const Center(
@@ -581,13 +836,15 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                 ],
               ),
             );
+              },
+            );
           },
         );
       },
     );
   }
 
-  Widget _attendanceLogRow(Attendance a, Worker staff) {
+  Widget _attendanceLogRow(Attendance a, Worker staff, {Function(Attendance? updated, bool isDeleted)? onUpdate}) {
     final dateStr = '${a.clockIn.month}/${a.clockIn.day}';
     final weekday = ['일', '월', '화', '수', '목', '금', '토'][a.clockIn.weekday % 7];
     
@@ -596,12 +853,15 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
     
     int pureMinutes = a.workedMinutes;
     if (a.clockOut != null && pureMinutes > 0) {
-      int breakMins = staff.breakMinutes.toInt();
-      if (a.breakStart != null && a.breakEnd != null) {
-        final v = a.breakEnd!.difference(a.breakStart!).inMinutes;
-        breakMins = v > 0 ? v : 0;
-      }
-      pureMinutes -= breakMins;
+      int breakMins = PayrollCalculator.calculateAppliedBreak(
+        att: a,
+        effectiveIn: a.clockIn,
+        effectiveOut: a.clockOut!,
+        fallbackMinutes: staff.breakMinutes.toInt(),
+        breakStartTimeStr: staff.breakStartTime,
+        breakEndTimeStr: staff.breakEndTime,
+      );
+      pureMinutes = a.clockOut!.difference(a.clockIn).inMinutes - breakMins;
       if (pureMinutes < 0) pureMinutes = 0;
     }
     
@@ -636,7 +896,14 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                       '$inTime ~ $outTime',
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                     ),
-                    if (a.isEditedByBoss)
+                    if (a.attendanceStatus == 'annual_leave')
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                        child: const Text('연차', style: TextStyle(fontSize: 8, color: Colors.blue, fontWeight: FontWeight.bold)),
+                      )
+                    else if (a.isEditedByBoss)
                       Container(
                         margin: const EdgeInsets.only(left: 6),
                         padding: const EdgeInsets.all(2),
@@ -652,9 +919,15 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
           ),
           InkWell(
             onTap: () async {
-              final updated = await showAttendanceEditDialog(context, a);
-              if (updated == true && mounted) {
-                setState(() {});
+              final result = await showAttendanceEditDialog(context, a);
+              if (mounted) {
+                if (result == 'deleted') {
+                  if (onUpdate != null) onUpdate(null, true);
+                  setState(() {});
+                } else if (result is Attendance) {
+                  if (onUpdate != null) onUpdate(result, false);
+                  setState(() {});
+                }
               }
             },
             child: Container(
@@ -1035,5 +1308,123 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
         ],
       ),
     );
+  }
+
+  void _showAddAttendanceDialog(BuildContext context, Worker staff) {
+    DateTime pickedDate = AppClock.now();
+    TimeOfDay inTime = const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay outTime = const TimeOfDay(hour: 18, minute: 0);
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (stCtx, setDialogState) {
+            return AlertDialog(
+              title: const Text('근무 기록 수동 추가'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('직원이 깜빡하고 출퇴근을 찍지 않았을 때 사장님이 직접 기록을 추가할 수 있습니다.', style: TextStyle(fontSize: 11, color: Colors.blueGrey)),
+                    const SizedBox(height: 16),
+                    const Text('근무 일자', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${pickedDate.year}/${pickedDate.month}/${pickedDate.day}'),
+                      trailing: const Icon(Icons.calendar_today, size: 20),
+                      onTap: () async {
+                        final d = await showDatePicker(
+                          context: ctx,
+                          initialDate: pickedDate,
+                          firstDate: AppClock.now().subtract(const Duration(days: 365)),
+                          lastDate: AppClock.now().add(const Duration(days: 31)),
+                        );
+                        if (d != null) setDialogState(() => pickedDate = d);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('출근 시각', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${inTime.hour.toString().padLeft(2, '0')}:${inTime.minute.toString().padLeft(2, '0')}'),
+                      trailing: const Icon(Icons.access_time, size: 20),
+                      onTap: () async {
+                        final t = await showTimePicker(context: ctx, initialTime: inTime);
+                        if (t != null) setDialogState(() => inTime = t);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('퇴근 시각', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${outTime.hour.toString().padLeft(2, '0')}:${outTime.minute.toString().padLeft(2, '0')}'),
+                      trailing: const Icon(Icons.access_time, size: 20),
+                      onTap: () async {
+                        final t = await showTimePicker(context: ctx, initialTime: outTime);
+                        if (t != null) setDialogState(() => outTime = t);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+                FilledButton(
+                  onPressed: isSaving ? null : () async {
+                    setDialogState(() => isSaving = true);
+                    try {
+                      final cIn = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, inTime.hour, inTime.minute);
+                      var cOut = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, outTime.hour, outTime.minute);
+                      if (cOut.isBefore(cIn)) {
+                        cOut = cOut.add(const Duration(days: 1)); // 익일 퇴근 처리
+                      }
+                      
+                      final att = Attendance(
+                        id: 'manual_${AppClock.now().millisecondsSinceEpoch}',
+                        staffId: staff.id,
+                        storeId: staff.storeId,
+                        clockIn: cIn,
+                        clockOut: cOut,
+                        originalClockIn: cIn,
+                        originalClockOut: cOut,
+                        type: AttendanceType.mobile,
+                        isAutoApproved: true,
+                        attendanceStatus: 'Normal', // 정상 승인 처리
+                        isEditedByBoss: true,
+                        editedByBossAt: AppClock.now(),
+                      );
+                      
+                      await DatabaseService().recordAttendance(att);
+                      if (ctx.mounted) {
+                        Navigator.pop(ctx, true);
+                        Navigator.pop(context); // 팝업 닫고
+                        setState(() {}); // 재계산 위해 화면 리프레시
+                      }
+                    } catch (e) {
+                      setDialogState(() => isSaving = false);
+                      if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('저장 실패: $e')));
+                    }
+                  },
+                  child: isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('추가'),
+                ),
+              ],
+            );
+          }
+        );
+      },
+    );
+  }
+
+  List<LeavePromotionStatus> _parsePromotionLogs(String json) {
+    if (json.isEmpty) return [];
+    try {
+      final List<dynamic> list = (jsonDecode(json) as List?) ?? [];
+      return list.map((e) => LeavePromotionStatus.fromMap((e as Map).cast<String, dynamic>())).toList();
+    } catch (_) {
+      return [];
+    }
   }
 }

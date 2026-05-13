@@ -21,86 +21,364 @@ service cloud.firestore {
         : '';
     }
 
-    // 특정 매장의 멤버(사장님 또는 직원)인지를 확인
-    function isStoreMember(storeId) {
+    // ★ 내 소속 매장 ID (교차 매장 접근 차단용)
+    function userStoreId() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('storeId', '') 
+        : '';
+    }
+
+    // ★ 본인 문서인지 확인 (workerId + storeId 동시 검증)
+    function isMyDoc(docStoreId, docStaffId) {
+      return isSignedIn() && userWorkerId() != '' && docStaffId == userWorkerId() && docStoreId == userStoreId();
+    }
+
+    // ★ 매장 소유자(사장님)인지 확인 — 쓰기 권한의 핵심 게이트
+    function isStoreOwner(storeId) {
       return isSignedIn() && (
-        isAdmin() || 
-        // 0) 체험 모드 매장인 경우 (즉시 통과하여 전파 지연으로 인한 Permission Denied 방지)
+        isAdmin() ||
+        // 체험 모드 매장
         (storeId == 'demo_' + request.auth.uid) ||
-        // 1) 유저 문서에 해당 storeId가 등록된 경우 (직원/관리자)
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('storeId', '') == storeId) ||
-        // 2) 매장 문서의 소유자(ownerId)인 경우 (사장님)
+        // stores 문서의 ownerId가 본인
         (exists(/databases/$(database)/documents/stores/$(storeId)) && 
          get(/databases/$(database)/documents/stores/$(storeId)).data.get('ownerId', '') == request.auth.uid)
       );
     }
 
+    // 특정 매장의 멤버(사장님 또는 직원)인지를 확인 — 읽기 권한용
+    function isStoreMember(storeId) {
+      return isStoreOwner(storeId) || (
+        isSignedIn() &&
+        // 유저 문서에 해당 storeId가 등록된 경우 (직원)
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('storeId', '') == storeId
+      );
+    }
+
     // --- 1. 유저 정보 (Top-level) ---
     match /users/{userId} {
-      allow read, write: if isSignedIn() && (uid() == userId || isAdmin());
+      allow read: if isSignedIn() && (uid() == userId || isAdmin());
+      // create 시에도 권한 필드 차단 — storeId/workerId/role은 acceptInvite Cloud Function만 기록
+      allow create: if isSignedIn() && uid() == userId &&
+        (
+          !request.resource.data.keys().hasAny(['storeId', 'workerId', 'role', 'isDemo']) ||
+          // 체험 모드 계정 생성 허용
+          (request.resource.data.get('storeId', '') == 'demo_' + uid() &&
+           request.resource.data.get('isDemo', false) == true &&
+           !request.resource.data.keys().hasAny(['workerId', 'role']))
+        );
+      // 보안 강화: 권한 및 멤버십 필드 임의 수정(Privilege Escalation) 원천 차단
+      // 예외 1: 매장 소유자는 자기 storeId 설정 가능 (매장 등록 직후)
+      // 예외 2: 체험 모드(demo_) 매장의 경우 isDemo/storeId 설정 허용
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        // 일반 수정: 권한 필드를 건드리지 않으면 OK
+        (uid() == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['storeId', 'workerId', 'role', 'isDemo'])) ||
+        // 사장님 매장 연결: storeId 설정 시 해당 매장의 소유자여야 함
+        (uid() == userId && request.resource.data.get('storeId', '') != '' &&
+         isStoreOwner(request.resource.data.storeId) &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['workerId', 'role'])) ||
+        // 체험 모드: demo_{uid} 매장만 허용
+        (uid() == userId && request.resource.data.get('storeId', '') == 'demo_' + uid() &&
+         request.resource.data.get('isDemo', false) == true)
+      );
+      // delete: 관리자 또는 매장 소유자(회원탈퇴)만 — 일반 사용자의 삭제→재생성 우회 차단
+      allow delete: if isSignedIn() && (
+        isAdmin() ||
+        (uid() == userId && resource.data.get('storeId', '') != '' &&
+         exists(/databases/$(database)/documents/stores/$(resource.data.storeId)) &&
+         get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.get('ownerId', '') == uid())
+      );
     }
 
     // --- 2. 매장 정보 및 하위 컬렉션 ---
     match /stores/{storeId} {
-      allow read: if isSignedIn();
+      allow read: if isStoreMember(storeId);
       allow create: if isSignedIn() && (request.resource.data.get('ownerId', '') == uid() || isAdmin());
-      allow update, delete: if isStoreMember(storeId);
+      // ★ 매장 수정/삭제는 소유자만
+      allow update, delete: if isStoreOwner(storeId);
 
-      // 직원 목록 (workers)
+      // 직원 목록 (workers) — 급여/보험/비자 등 민감 필드 포함
       match /workers/{workerId} {
-        allow read: if isSignedIn();
-        // 알바생이 본인의 uid를 등록할 수 있게 허용
-        allow update: if isStoreMember(storeId) || (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid']));
-        allow create, delete: if isStoreMember(storeId);
+        // ★ 읽기: 사장님 전체 / 직원은 본인 문서만 (민감 급여·보험 필드 격리)
+        allow read: if isSignedIn() && (isStoreOwner(storeId) || isMyDoc(storeId, workerId));
+        // ★ 생성/삭제: 사장님만 (알바생이 다른 직원을 추가/삭제하는 것 차단)
+        allow create, delete: if isStoreOwner(storeId);
+        // ★ 수정: 사장님만 — uid 바인딩은 acceptInvite Cloud Function(Admin SDK)이 처리
+        // 클라이언트 측 빈 슬롯 선점 경로를 완전히 차단
+        allow update: if isStoreOwner(storeId);
+
+        // 근무표 일별 데이터 (rosterDays)
+        // collectionGroup 쿼리로 전체 직원 근무표를 보여주므로 매장 멤버 읽기 허용
+        // 쓰기는 사장님만 (대타 rosterDays 변경은 사장님 승인 후 처리)
+        match /rosterDays/{dateId} {
+          allow read: if isStoreMember(storeId);
+          allow write: if isStoreOwner(storeId);
+        }
       }
 
-      // 노무 서류 (documents) - 알바생 서명 및 사장님 대면 서명/교부 허용
+      // 공개용 직원 프로필 (workerProfiles) — 이름/근무시간만 (비민감)
+      // 대타 시스템, 전체 근무표 등에서 알바생이 동료 정보를 읽을 때 사용
+      match /workerProfiles/{workerId} {
+        allow read: if isStoreMember(storeId);
+        allow write: if isStoreOwner(storeId);
+      }
+
+      // 노무 서류 (documents)
       match /documents/{docId} {
-        allow read: if isSignedIn() && (isAdmin() || isStoreMember(storeId) || resource.data.get('staffId', '') == userWorkerId());
-        // 사장님(isStoreMember) 또는 알바생 본인이 서명 가능
-        allow update: if isSignedIn() && (isAdmin() || isStoreMember(storeId) || resource.data.get('staffId', '') == userWorkerId());
-        allow create, delete: if isStoreMember(storeId);
+        // 읽기: 사장님 또는 본인 서류 (storeId + staffId 동시 검증)
+        allow read: if isSignedIn() && (isStoreOwner(storeId) || isMyDoc(storeId, resource.data.get('staffId', '')));
+        // ★ 생성: 사장님만 (알바생이 서류를 생성/삭제하는 것 차단)
+        allow create: if isStoreOwner(storeId);
+        // ★ 삭제: 사장님만 — 단, 확정 급여명세서(wage_*)와 signed 문서는 hard delete 불가
+        //   signed 문서는 soft delete(isDeleted 플래그)만 허용
+        allow delete: if isStoreOwner(storeId)
+          && !docId.matches('wage_.*')
+          && resource.data.get('status', '') != 'signed';
+        // 수정: 사장님은 전체 필드 가능 / 직원은 서명 관련 필드만 허용
+        // ★ 단, 확정 급여명세서(wage_*)는 변조 방지를 위해 수정 불가
+        // ★ signed 문서의 immutable 필드(pdfHash, pdfR2DocId, documentHash)는 확정 후 변경 차단
+        allow update: if isSignedIn() && !docId.matches('wage_.*') && (
+          // ── 사장님 ──
+          (isStoreOwner(storeId) &&
+            // signed 상태 문서의 법적 증빙 필드 변경 차단 (immutable 정책)
+            !(resource.data.get('status', '') == 'signed' &&
+              request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                'pdfHash', 'pdfR2DocId', 'documentHash', 'content', 'dataJson'
+              ])
+            )
+          ) ||
+          // ── 직원 본인 서명 — 허용 필드 화이트리스트로 제한 ──
+          (isMyDoc(storeId, resource.data.get('staffId', '')) &&
+           // 변경 필드가 서명 관련 필드만 포함
+           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+             'content', 'dataJson', 'documentHash', 'title', 'type',
+             'staffId', 'storeId', 'id', 'createdAt', 'pdfUrl', 'expiryDate',
+             'bossSignatureUrl', 'bossSignatureMetadata', 'sentAt',
+             'pdfR2DocId', 'pdfHash', 'pdfVersion'
+           ]) &&
+           // status 변경 시: signed 또는 delivered로만 전환 가능 (역방향/임의 전환 차단)
+           (request.resource.data.get('status', '') == resource.data.get('status', '') ||
+            request.resource.data.get('status', '') in ['signed', 'delivered'])
+          )
+        );
       }
 
-      // 기타 하위 (notices, expirations, todos 등)
-      match /{allIndices=**} {
-        allow read: if isSignedIn() && (isAdmin() || isStoreMember(storeId));
-        allow write: if isStoreMember(storeId);
+      // ── 공지사항 (notices) ──
+      // 알바생도 공지 읽기/읽음 표시 필요
+      match /notices/{noticeId} {
+        allow read: if isStoreMember(storeId);
+        allow write: if isStoreOwner(storeId);
+        match /reads/{readerId} {
+          allow read: if isStoreMember(storeId);
+          // 알바생 본인의 읽음 표시만 허용
+          allow write: if isSignedIn() && isStoreMember(storeId);
+        }
       }
+
+      // ── 할일/전달사항 (todos) ──
+      // 알바생도 메모 작성/완료 가능
+      match /todos/{todoId} {
+        allow read: if isStoreMember(storeId);
+        allow write: if isSignedIn() && isStoreMember(storeId);
+      }
+
+      // ── 유통기한 관리 (expirations) ──
+      // 알바생도 등록/삭제 가능
+      match /expirations/{expirationId} {
+        allow read: if isStoreMember(storeId);
+        allow write: if isSignedIn() && isStoreMember(storeId);
+      }
+
+      // ── 매장 내 알림 (notifications) ──
+      // 알바생은 대타/사직 알림만 생성 가능, 수정/삭제는 사장님만
+      match /notifications/{notifId} {
+        allow read: if isStoreMember(storeId);
+        // ★ 사장님은 모든 알림 생성/수정/삭제 가능
+        allow write: if isStoreOwner(storeId);
+        // ★ 알바생은 허용된 type의 알림만 생성 가능 (임의 메시지 주입 차단)
+        allow create: if isSignedIn() && isStoreMember(storeId) &&
+          request.resource.data.get('type', '') in [
+            'substitution_approval_request',
+            'substitution_auto_request',
+            'resignation'
+          ];
+      }
+
+      // ── 민감 데이터: 사장님 전용 ──
+      // archives, destruction_logs, frozen_items, payrolls 등
+      // 직원이 읽거나 조작할 수 없도록 사장님에게만 허용
+      match /archives/{archiveId} {
+        allow read, write: if isStoreOwner(storeId);
+      }
+      match /destruction_logs/{logId} {
+        allow read, write: if isStoreOwner(storeId);
+      }
+      match /frozen_items/{itemId} {
+        allow read, write: if isStoreOwner(storeId);
+      }
+      match /payrolls/{payrollId} {
+        allow read, write: if isStoreOwner(storeId);
+      }
+
+      // ── Fallback: 미정의 하위 컬렉션은 기본 거부 ──
+      // 향후 추가되는 컬렉션이 자동으로 열리는 것을 방지
+      // 새 컬렉션은 위에 명시적 match를 추가해야 함
     }
 
     // --- 3. 출퇴근 기록 (Top-level) ---
     match /attendance/{attendanceId} {
-      allow read: if isSignedIn() && (isAdmin() || resource.data.get('staffId', '') == userWorkerId() || isStoreMember(resource.data.get('storeId', '')));
-      allow create: if isSignedIn() && (isAdmin() || request.resource.data.get('staffId', '') == userWorkerId() || isStoreMember(request.resource.data.get('storeId', '')));
-      allow update: if isSignedIn() && (isAdmin() || resource.data.get('staffId', '') == userWorkerId() || isStoreMember(resource.data.get('storeId', '')));
+      // 읽기: 사장님은 자기 매장 전체 / 직원은 본인 기록만
+      // (기존 배포된 앱의 하위 호환성을 위해 staffId만 일치해도 읽기 허용)
+      allow read: if isSignedIn() && (
+        isAdmin() || 
+        // ★ 체험 모드 매장 — get() 호출 없이 직접 비교
+        resource.data.get('storeId', '').matches('demo_.*') && resource.data.get('storeId', '') == 'demo_' + request.auth.uid ||
+        isStoreOwner(resource.data.get('storeId', '')) ||
+        (userWorkerId() != '' && resource.data.get('staffId', '') == userWorkerId())
+      );
+      // ★ 생성: 사장님은 자유 / 직원은 본인 출근 기록만 (부정 기록 방지 필드 제한)
+      allow create: if isSignedIn() && (
+        isAdmin() || 
+        // ★ 체험 모드 매장 — get() 호출 없이 직접 비교 (batch write 시 get() 10회 제한 우회)
+        request.resource.data.get('storeId', '') == 'demo_' + request.auth.uid ||
+        isStoreOwner(request.resource.data.get('storeId', '')) ||
+        // 직원 본인 출근 — clockOut 없이 생성만 허용 (퇴근은 update로)
+        (isMyDoc(request.resource.data.get('storeId', ''), request.resource.data.get('staffId', '')) &&
+         // ★ clockOut이 null이어야 함 (완성된 기록 조작 차단)
+         (!('clockOut' in request.resource.data) || request.resource.data.clockOut == null) &&
+         // ★ 승인/관리자 플래그 조작 차단
+         (!('isEditedByBoss' in request.resource.data) || request.resource.data.isEditedByBoss == false) &&
+         (!('overtimeApproved' in request.resource.data) || request.resource.data.overtimeApproved == false) &&
+         (!('isAttendanceEquivalent' in request.resource.data) || request.resource.data.isAttendanceEquivalent == false)
+        )
+      );
+      // ★ 수정: 사장님은 전체 / 직원은 퇴근 관련 필드만 허용
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        // ★ 체험 모드 매장
+        resource.data.get('storeId', '') == 'demo_' + request.auth.uid ||
+        isStoreOwner(resource.data.get('storeId', '')) ||
+        // 직원 본인 퇴근 — 허용 필드 화이트리스트
+        (isMyDoc(resource.data.get('storeId', ''), resource.data.get('staffId', '')) &&
+         // clockIn, staffId, storeId 등 핵심 필드 변경 차단
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+           'clockIn', 'originalClockIn', 'staffId', 'storeId', 'id',
+           'isAutoApproved', 'isEditedByBoss', 'editedByBossAt',
+           'isAttendanceEquivalent', 'isSpecialOvertime',
+           'specialOvertimeAuthorizedAt', 'specialOvertimeReason',
+           'scheduledShiftStartIso'
+         ])
+        )
+      );
+      // ★ 삭제: 사장님만
+      allow delete: if isSignedIn() && (
+        isAdmin() || 
+        // ★ 체험 모드 매장
+        resource.data.get('storeId', '') == 'demo_' + request.auth.uid ||
+        isStoreOwner(resource.data.get('storeId', ''))
+      );
     }
 
     // --- 4. 근무표/대타/교육 (Top-level) ---
     match /shifts/{docId} {
-      allow read: if isSignedIn() && (isAdmin() || resource.data.get('staffId', '') == userWorkerId() || isStoreMember(resource.data.get('storeId', '')));
-      allow write: if isSignedIn() && (isAdmin() || isStoreMember(request.resource.data.get('storeId', '')) || (resource != null && isStoreMember(resource.data.get('storeId', ''))));
+      // 읽기: 사장님 또는 본인 근무표 (★ storeId + staffId 동시 검증)
+      allow read: if isSignedIn() && (
+        isAdmin() || 
+        isMyDoc(resource.data.get('storeId', ''), resource.data.get('staffId', '')) || 
+        isStoreOwner(resource.data.get('storeId', ''))
+      );
+      // ★ 쓰기: 사장님만 (알바생이 근무표 조작 차단)
+      allow write: if isSignedIn() && (
+        isAdmin() || 
+        isStoreOwner(request.resource.data.get('storeId', '')) || 
+        (resource != null && isStoreOwner(resource.data.get('storeId', '')))
+      );
     }
     match /substitutions/{docId} {
-      allow read, write: if isSignedIn();
+      // 읽기: 매장 멤버 전체 (대타 요청 공유 필요)
+      allow read: if isSignedIn() && (isAdmin() || isStoreMember(resource.data.get('storeId', '')));
+      // ★ 생성: 매장 멤버 + 본인이 요청자 또는 대상자여야 함 + 초기 status 제한
+      allow create: if isSignedIn() && (
+        isAdmin() ||
+        (isStoreMember(request.resource.data.get('storeId', '')) &&
+         // 요청자 또는 대상자가 본인이어야 함 (타인 사칭 차단)
+         (request.resource.data.get('requesterId', '') == userWorkerId() ||
+          request.resource.data.get('proposerId', '') == userWorkerId()) &&
+         // 초기 status는 pending 또는 pending_auto만 허용
+         request.resource.data.get('status', '') in ['pending', 'pending_auto'] &&
+         // 클라이언트에서 자체 승인 차단
+         request.resource.data.get('isAutoApproved', true) == false
+        )
+      );
+      // ★ 수정/삭제: 사장님만 (대타 승인/거부는 사장님 권한)
+      allow update, delete: if isSignedIn() && (isAdmin() || isStoreOwner(resource.data.get('storeId', '')));
     }
     match /educationRecords/{docId} {
-      allow read, write: if isSignedIn();
+      // 읽기: 매장 멤버 전체
+      allow read: if isSignedIn() && (isAdmin() || isStoreMember(resource.data.get('storeId', '')));
+      // ★ 쓰기: 사장님만 (교육 기록 관리)
+      allow create: if isSignedIn() && (isAdmin() || isStoreOwner(request.resource.data.get('storeId', '')));
+      allow update, delete: if isSignedIn() && (isAdmin() || isStoreOwner(resource.data.get('storeId', '')));
     }
 
     // --- 5. 초대 및 통계 ---
     match /invites/{inviteId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      // ★ 초대 생성/관리: 사장님만 (알바생이 초대코드 생성/수정 차단)
+      allow create: if isSignedIn() && isStoreOwner(request.resource.data.get('storeId', ''));
+      allow update: if isSignedIn() && (
+        isStoreOwner(resource.data.get('storeId', '')) || 
+        // 체험 모드용 공용 초대코드(AAAAAA 등)는 다른 체험 유저가 덮어쓸 수 있도록 허용
+        (resource.data.get('isVirtual', false) == true && isStoreOwner(request.resource.data.get('storeId', '')))
+      );
+      allow delete: if isSignedIn() && isStoreOwner(resource.data.get('storeId', ''));
     }
     match /stats/{docId} {
       allow read: if isSignedIn();
     }
 
     // --- 6. 푸시 알림 큐 ---
+    // ★ 보안 강화: 사장님은 자유롭게 생성, 알바생은 사장님에게 보내는 알림(pushBoss)만 허용
     match /notificationQueue/{docId} {
-      allow write: if isSignedIn();
+      allow read: if isSignedIn() && isStoreOwner(resource.data.get('storeId', '')); // 사장님만 (deduplication 체크용)
+      // create: 사장님 또는 (알바생이 pushBoss로 전송) + 허용된 채널 + 필수 필드 검증 + status 고정
+      allow create: if isSignedIn() &&
+        (isStoreOwner(request.resource.data.get('storeId', '')) || 
+         (isStoreMember(request.resource.data.get('storeId', '')) && request.resource.data.get('channel', '') == 'pushBoss')
+        ) &&
+        request.resource.data.get('channel', '') in ['pushBoss', 'pushStaff', 'sms', 'kakao'] &&
+        request.resource.data.get('status', '') == 'queued' &&
+        request.resource.data.keys().hasAll(['storeId', 'channel', 'status', 'message']);
+      // update: Cloud Function 전용 — 클라이언트 수정 차단
+      allow update: if false;
+      // delete: 사장님만 (알림 큐 정리)
+      allow delete: if isSignedIn() && isStoreOwner(resource.data.get('storeId', ''));
+    }
+
+    // --- 7. 파기 증명원 (회원 탈퇴 시 생성) ---
+    match /audit_logs/{docId} {
+      allow create: if isSignedIn();
+      allow read: if isAdmin();
+    }
+
+    // --- 8. 앱 설정 (최저시급 등) ---
+    match /app_config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // --- 9. 온보딩 진행 상태 ---
+    match /onboarding_progress/{userId} {
+      allow read, write: if isSignedIn() && uid() == userId;
+    }
+
+    // --- 10. collectionGroup 쿼리용 rosterDays ---
+    // collectionGroup('rosterDays')는 nested match로는 접근 불가
+    // 각 rosterDay 문서에 storeId 필드가 있어야 멤버십 검증 가능
+    match /{path=**}/rosterDays/{dateId} {
+      allow read: if isSignedIn() && isStoreMember(resource.data.get('storeId', ''));
+      allow write: if isSignedIn() && isStoreOwner(resource.data.get('storeId', ''));
     }
   }
 }

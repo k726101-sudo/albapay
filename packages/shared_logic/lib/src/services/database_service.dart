@@ -25,7 +25,11 @@ class DatabaseService {
   // }
   Future<Map<String, dynamic>?> getInvite(String inviteId) async {
     try {
-      final doc = await _db.collection('invites').doc(inviteId).get().timeout(const Duration(seconds: 30));
+      final doc = await _db
+          .collection('invites')
+          .doc(inviteId)
+          .get()
+          .timeout(const Duration(seconds: 30));
       return doc.exists ? doc.data() : null;
     } catch (e) {
       // ignore – caller handles null gracefully
@@ -95,14 +99,24 @@ class DatabaseService {
   }
 
   Stream<Store?> streamStore(String storeId) {
-    return _db.collection('stores').doc(storeId).snapshots().map((doc) =>
-        doc.exists ? Store.fromJson(doc.data()!) : null);
+    return _db
+        .collection('stores')
+        .doc(storeId)
+        .snapshots()
+        .map((doc) => doc.exists ? Store.fromJson(doc.data()!) : null);
   }
 
   // --- Attendance Operations ---
 
   Future<void> recordAttendance(Attendance attendance) async {
-    await _db.collection('attendance').doc(attendance.id).set(attendance.toJson(), SetOptions(merge: true));
+    await _db
+        .collection('attendance')
+        .doc(attendance.id)
+        .set(attendance.toJson(), SetOptions(merge: true));
+  }
+
+  Future<void> deleteAttendance(String attendanceId) async {
+    await _db.collection('attendance').doc(attendanceId).delete();
   }
 
   Stream<List<Attendance>> streamAttendance(String storeId) {
@@ -110,8 +124,11 @@ class DatabaseService {
         .collection('attendance')
         .where('storeId', isEqualTo: storeId)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Attendance.fromJson(doc.data(), id: doc.id)).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Attendance.fromJson(doc.data(), id: doc.id))
+              .toList(),
+        );
   }
 
   Future<List<Attendance>> getAttendance(String storeId) async {
@@ -119,21 +136,29 @@ class DatabaseService {
         .collection('attendance')
         .where('storeId', isEqualTo: storeId)
         .get();
-    return snapshot.docs.map((doc) => Attendance.fromJson(doc.data(), id: doc.id)).toList();
+    return snapshot.docs
+        .map((doc) => Attendance.fromJson(doc.data(), id: doc.id))
+        .toList();
   }
 
-  Stream<List<Attendance>> streamDailyAttendance(String storeId, DateTime date) {
+  Stream<List<Attendance>> streamDailyAttendance(
+    String storeId,
+    DateTime date,
+  ) {
     final start = DateTime(date.year, date.month, date.day);
     final end = start.add(const Duration(days: 1));
-    
+
     return _db
         .collection('attendance')
         .where('storeId', isEqualTo: storeId)
         .where('clockIn', isGreaterThanOrEqualTo: start.toIso8601String())
         .where('clockIn', isLessThan: end.toIso8601String())
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Attendance.fromJson(doc.data(), id: doc.id)).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Attendance.fromJson(doc.data(), id: doc.id))
+              .toList(),
+        );
   }
 
   /// 사장님 앱에서 저장한 일별 근무표 override → 알바 웹에서 Stream으로 반영
@@ -143,6 +168,7 @@ class DatabaseService {
     required String dateYmd,
     String? checkInHm,
     String? checkOutHm,
+    bool isOff = false,
   }) async {
     final ref = _db
         .collection('stores')
@@ -151,10 +177,22 @@ class DatabaseService {
         .doc(workerId)
         .collection('rosterDays')
         .doc(dateYmd);
-    if (checkInHm == null || checkOutHm == null) {
+
+    if (isOff) {
+      await ref.set({
+        'isOff': true,
+        'storeId': storeId,
+        'workerId': workerId,
+        'date': dateYmd,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } else if (checkInHm == null || checkOutHm == null) {
+      // Revert completely to the base schedule
       await ref.delete();
     } else {
       await ref.set({
+        'storeId': storeId,
+        'workerId': workerId,
         'date': dateYmd,
         'checkIn': checkInHm,
         'checkOut': checkOutHm,
@@ -261,11 +299,12 @@ class DatabaseService {
     required String docTitle,
     required String kind,
   }) async {
-    final id = 'worker_${workerId}_${kind}_${AppClock.now().millisecondsSinceEpoch}';
+    final id =
+        'worker_${workerId}_${kind}_${AppClock.now().millisecondsSinceEpoch}';
     await _db.collection('notificationQueue').doc(id).set({
       'dedupeKey': id,
       'storeId': storeId,
-      'channel': 'pushWorker',
+      'channel': 'pushStaff',
       'targetUid': workerId,
       'status': 'queued',
       'type': kind,
@@ -292,6 +331,68 @@ class DatabaseService {
         .set(doc.toMap());
   }
 
+  /// 알바생 서명 전용 — 서명 관련 필드만 update (보안 규칙 화이트리스트 준수)
+  /// content, dataJson, documentHash, bossSignature 등 법적 증빙 필드는 건드리지 않음
+  Future<void> signDocumentAsWorker({
+    required String storeId,
+    required String docId,
+    required String signatureUrl,
+    required Map<String, dynamic> signatureMetadata,
+    required DateTime signedAt,
+    DateTime? deliveryConfirmedAt,
+  }) async {
+    final updateData = <String, dynamic>{
+      'signatureUrl': signatureUrl,
+      'signatureMetadata': signatureMetadata,
+      'signedAt': signedAt.toIso8601String(),
+      'status': 'signed',
+    };
+    if (deliveryConfirmedAt != null) {
+      updateData['deliveryConfirmedAt'] = deliveryConfirmedAt.toIso8601String();
+    }
+    await _db
+        .collection('stores')
+        .doc(storeId)
+        .collection('documents')
+        .doc(docId)
+        .update(updateData);
+  }
+
+  /// Soft delete — 문서를 물리적으로 삭제하지 않고 isDeleted 플래그를 설정합니다.
+  /// 노무 서류는 법적 보관 의무가 있으므로 완전 삭제 대신 논리 삭제를 적용합니다.
+  Future<void> deleteDocument(String storeId, String documentId, {String? deletedByUid}) async {
+    await _db
+        .collection('stores')
+        .doc(storeId)
+        .collection('documents')
+        .doc(documentId)
+        .update({
+      'isDeleted': true,
+      'deletedAt': DateTime.now().toIso8601String(),
+      if (deletedByUid != null) 'deletedBy': deletedByUid,
+    });
+  }
+
+  /// PDF 아카이브 메타데이터 업데이트 (서명 완료 후 PdfArchiveService가 호출)
+  Future<void> updateDocumentArchive({
+    required String storeId,
+    required String docId,
+    required String pdfR2DocId,
+    required String pdfHash,
+    required int pdfVersion,
+  }) async {
+    await _db
+        .collection('stores')
+        .doc(storeId)
+        .collection('documents')
+        .doc(docId)
+        .update({
+      'pdfR2DocId': pdfR2DocId,
+      'pdfHash': pdfHash,
+      'pdfVersion': pdfVersion,
+    });
+  }
+
   Stream<List<LaborDocument>> streamDocuments(String storeId) {
     return _db
         .collection('stores')
@@ -300,16 +401,16 @@ class DatabaseService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
-              .map((doc) => LaborDocument.fromMap(
-                    doc.id,
-                    doc.data(),
-                  ))
+              .map((doc) => LaborDocument.fromMap(doc.id, doc.data()))
               .toList(),
         );
   }
 
   /// 특정 알바생(staffId)에게 할당된 서류만 실시간으로 가져옵니다. (보안 규칙 준수용)
-  Stream<List<LaborDocument>> streamWorkerDocuments(String storeId, String staffId) {
+  Stream<List<LaborDocument>> streamWorkerDocuments(
+    String storeId,
+    String staffId,
+  ) {
     return _db
         .collection('stores')
         .doc(storeId)
@@ -318,10 +419,7 @@ class DatabaseService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
-              .map((doc) => LaborDocument.fromMap(
-                    doc.id,
-                    doc.data(),
-                  ))
+              .map((doc) => LaborDocument.fromMap(doc.id, doc.data()))
               .toList(),
         );
   }
@@ -330,19 +428,22 @@ class DatabaseService {
   Future<void> acknowledgeDocument({
     required String storeId,
     required String docId,
-    required String ip,
-    required String userAgent,
+    Map<String, dynamic>? metadata,
   }) async {
+    final updateData = <String, dynamic>{
+      'deliveryConfirmedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (metadata != null) {
+      updateData['signatureMetadata'] = metadata;
+    }
+
     await _db
         .collection('stores')
         .doc(storeId)
         .collection('documents')
         .doc(docId)
-        .update({
-      'deliveryConfirmedAt': FieldValue.serverTimestamp(),
-      'deliveryConfirmedIp': ip,
-      'deliveryConfirmedUserAgent': userAgent,
-    });
+        .update(updateData);
   }
 
   /// 알바생이 공유된 링크를 클릭하여 문서를 조회했을 때 호출 (수신 확인 트래킹)
@@ -355,15 +456,16 @@ class DatabaseService {
         .doc(storeId)
         .collection('documents')
         .doc(docId);
-    
+
     final snap = await ref.get();
     if (snap.exists) {
       final data = snap.data();
       // 이미 delivered 이상인 경우(교부 확인 포함) 업데이트 건너뜀
-      if (data != null && data['status'] == 'delivered' || data?['deliveryConfirmedAt'] != null) {
+      if (data != null && data['status'] == 'delivered' ||
+          data?['deliveryConfirmedAt'] != null) {
         return;
       }
-      
+
       await ref.update({
         'status': 'delivered',
         'deliveredAt': FieldValue.serverTimestamp(),
@@ -378,10 +480,7 @@ class DatabaseService {
         .collection('documents')
         .get();
     return snapshot.docs
-        .map((doc) => LaborDocument.fromMap(
-              doc.id,
-              doc.data(),
-            ))
+        .map((doc) => LaborDocument.fromMap(doc.id, doc.data()))
         .toList();
   }
 
@@ -390,8 +489,11 @@ class DatabaseService {
         .collection('substitutions')
         .where('storeId', isEqualTo: storeId)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Substitution.fromJson(doc.data())).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Substitution.fromJson(doc.data()))
+              .toList(),
+        );
   }
 
   Future<List<Substitution>> getSubstitutions(String storeId) async {
@@ -399,13 +501,18 @@ class DatabaseService {
         .collection('substitutions')
         .where('storeId', isEqualTo: storeId)
         .get();
-    return snapshot.docs.map((doc) => Substitution.fromJson(doc.data())).toList();
+    return snapshot.docs
+        .map((doc) => Substitution.fromJson(doc.data()))
+        .toList();
   }
 
   // --- Education Operations ---
 
   Future<void> saveEducationRecord(EducationRecord record) async {
-    await _db.collection('educationRecords').doc(record.id).set(record.toJson());
+    await _db
+        .collection('educationRecords')
+        .doc(record.id)
+        .set(record.toJson());
   }
 
   Stream<List<EducationRecord>> streamEducationRecords(String storeId) {
@@ -413,8 +520,11 @@ class DatabaseService {
         .collection('educationRecords')
         .where('storeId', isEqualTo: storeId)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => EducationRecord.fromJson(doc.data())).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => EducationRecord.fromJson(doc.data()))
+              .toList(),
+        );
   }
 
   Future<List<EducationRecord>> getEducationRecords(String storeId) async {
@@ -422,7 +532,9 @@ class DatabaseService {
         .collection('educationRecords')
         .where('storeId', isEqualTo: storeId)
         .get();
-    return snapshot.docs.map((doc) => EducationRecord.fromJson(doc.data())).toList();
+    return snapshot.docs
+        .map((doc) => EducationRecord.fromJson(doc.data()))
+        .toList();
   }
 
   // --- Shift Operations ---
@@ -446,7 +558,10 @@ class DatabaseService {
     final snapshot = await _db
         .collection('shifts')
         .where('staffId', isEqualTo: staffId)
-        .where('startTime', isGreaterThanOrEqualTo: startOfDay.toIso8601String())
+        .where(
+          'startTime',
+          isGreaterThanOrEqualTo: startOfDay.toIso8601String(),
+        )
         .where('startTime', isLessThan: endOfDay.toIso8601String())
         .limit(1)
         .get();

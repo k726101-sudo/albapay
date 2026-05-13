@@ -1,4 +1,3 @@
-import 'package:web/web.dart' as web;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_logic/shared_logic.dart';
@@ -62,6 +61,26 @@ class _DocumentViewScreenState extends State<DocumentViewScreen> {
   }
 
   Future<void> _openPdf() async {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF 계약서를 불러오는 중입니다...'), duration: Duration(seconds: 2)),
+      );
+    }
+
+    // 1. R2 아카이브 우선 (immutable 확정본)
+    if (_doc != null && _doc!.pdfR2DocId != null && _doc!.pdfR2DocId!.isNotEmpty) {
+      try {
+        final archiveUrl = await PdfArchiveService.instance.getArchivedPdfUrl(_doc!);
+        if (archiveUrl != null) {
+          final success = await launchUrl(Uri.parse(archiveUrl), mode: LaunchMode.externalApplication);
+          if (success) return;
+        }
+      } catch (e) {
+        debugPrint('R2 아카이브 PDF 열기 실패, 폴백: $e');
+      }
+    }
+
+    // 2. 폴백: Firebase Storage pdfUrl
     final pdfUrl = _doc?.pdfUrl;
     if (pdfUrl == null || pdfUrl.isEmpty) {
       if (mounted) {
@@ -72,23 +91,14 @@ class _DocumentViewScreenState extends State<DocumentViewScreen> {
       return;
     }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('PDF 계약서를 불러오는 중입니다...'), duration: Duration(seconds: 2)),
-      );
-    }
-
     final url = Uri.parse(pdfUrl);
     try {
-      // Web에서는 externalApplication 모드가 새 창/탭을 여는 표준 방식입니다.
       final success = await launchUrl(url, mode: LaunchMode.externalApplication);
       if (!success) {
-        // url_launcher가 실패할 경우 dart:html 방식으로 직접 엽니다.
-        web.window.open(pdfUrl, '_blank');
+        debugPrint('url_launcher could not launch: $pdfUrl');
       }
     } catch (e) {
       debugPrint('Error launching PDF URL: $e');
-      web.window.open(pdfUrl, '_blank');
     }
   }
 

@@ -10,12 +10,14 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_logic/shared_logic.dart';
 
 import '../models/worker.dart';
+import '../models/schedule_override.dart';
 import 'store_cache_service.dart';
 
 class WorkerService {
   static final _hiveBox = Hive.box<Worker>('workers');
   static final _firestore = FirebaseFirestore.instance;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _overridesSub;
 
   /// 직원 초대용 6자리 코드 생성 (헷갈리기 쉬운 글자 제외)
   /// 예: `A7B2X9`
@@ -127,6 +129,23 @@ class WorkerService {
           .collection('workers')
           .doc(worker.id)
           .set(firebaseMap);
+
+      // 공개용 프로필 동기화 (이름/근무시간만 — 급여/보험/비자 제외)
+      // alba_web의 대타/전체 근무표에서 사용
+      await _firestore
+          .collection('stores')
+          .doc(storeId)
+          .collection('workerProfiles')
+          .doc(worker.id)
+          .set({
+        'name': worker.name,
+        'status': worker.status,
+        'workDays': worker.workDays,
+        'checkInTime': worker.checkInTime,
+        'checkOutTime': worker.checkOutTime,
+        'breakMinutes': worker.breakMinutes,
+        'workScheduleJson': worker.workScheduleJson,
+      });
     } catch (e) {
       debugPrint('Firebase sync failed: $e');
     }
@@ -302,6 +321,13 @@ class WorkerService {
       ];
     }
 
+    // 5인 이상 사업장 여부 조회 (고정연장수당 가산율 결정)
+    bool isFiveOrMore = false;
+    try {
+      final storeDoc = await _firestore.collection('stores').doc(storeId).get();
+      isFiveOrMore = storeDoc.data()?['isFiveOrMore'] as bool? ?? false;
+    } catch (_) {}
+
     final batch = _firestore.batch();
     for (final doc in docs) {
       final docType = DocumentType.values.byName(doc['type']!);
@@ -329,6 +355,23 @@ class WorkerService {
       final now = AppClock.now();
       final todayStr = '${now.year}년 ${now.month.toString().padLeft(2, '0')}월 ${now.day.toString().padLeft(2, '0')}일';
 
+      // ── 통상시급 & 고정연장수당 적법 산출 ──
+      final mealAmount = worker.allowances
+          .where((a) => a.label == '식대' || a.label == '식비')
+          .fold<double>(0, (sum, a) => sum + a.amount);
+      // 통상시급 = (기본급 + 식대) / 209 (24.12 대법원 판례: 정기·일률 식대 포함)
+      final ordinaryHourly = worker.monthlyWage > 0
+          ? (worker.monthlyWage + mealAmount) / 209
+          : worker.hourlyWage;
+      // 고정연장수당: 위자드가 저장한 확정 금액 우선, 없으면 시간×통상시급×가산율 역산
+      final otMultiplier = isFiveOrMore ? 1.5 : 1.0;
+      final fixedOTPay = worker.fixedOvertimePay > 0
+          ? worker.fixedOvertimePay
+          : (worker.fixedOvertimeHours > 0 && ordinaryHourly > 0
+              ? (worker.fixedOvertimeHours.floor() * ordinaryHourly * otMultiplier)
+              : 0.0);
+      final wageTotal = worker.monthlyWage + mealAmount + fixedOTPay;
+
       String content;
       switch (docType) {
         case DocumentType.contract_full:
@@ -350,7 +393,14 @@ class WorkerService {
             'dispatchPeriod': dispatchPeriod,
             'dispatchContact': dispatchContact,
             'dispatchMemo': dispatchMemo,
-            'baseWage': worker.hourlyWage.toStringAsFixed(0),
+            'wageType': worker.wageType ?? 'hourly',
+            'baseWage': ordinaryHourly.round().toStringAsFixed(0),
+            'monthlyWage': worker.monthlyWage.toStringAsFixed(0),
+            'mealAllowance': mealAmount.toStringAsFixed(0),
+            'fixedOTHours': worker.fixedOvertimeHours.floor().toString(),
+            'fixedOTPay': fixedOTPay.round().toString(),
+            'wageTotal': wageTotal.round().toStringAsFixed(0),
+            'isFiveOrMore': isFiveOrMore.toString(),
             'payday': '10',
             'ownerName': '대표자',
             'staffName': worker.name,
@@ -382,6 +432,14 @@ class WorkerService {
           content = '';
       }
 
+      final createdAt = AppClock.now();
+      final documentHash = SecurityMetadataHelper.generateDocumentHash(
+        type: docType.name,
+        staffId: worker.id,
+        content: content,
+        createdAt: createdAt.toIso8601String(),
+      );
+
       final laborDoc = LaborDocument(
         id: docId,
         staffId: worker.id,
@@ -390,7 +448,8 @@ class WorkerService {
         status: 'draft',
         title: doc['title'] ?? '',
         content: content,
-        createdAt: AppClock.now(),
+        createdAt: createdAt,
+        documentHash: documentHash,
       );
 
       batch.set(docRef, laborDoc.toMap());
@@ -442,6 +501,17 @@ class WorkerService {
         'status': 'inactive',
       }, SetOptions(merge: true));
     } catch (_) {}
+
+    // 공개 프로필도 비활성화
+    final storeId = await _resolveStoreId();
+    if (storeId.isNotEmpty) {
+      try {
+        await _firestore
+            .collection('stores').doc(storeId)
+            .collection('workerProfiles').doc(workerId)
+            .set({'status': 'inactive'}, SetOptions(merge: true));
+      } catch (_) {}
+    }
   }
 
   static Future<void> hardDelete(String workerId) async {
@@ -465,6 +535,14 @@ class WorkerService {
           .collection('stores')
           .doc(storeId)
           .collection('workers')
+          .doc(workerId)
+          .delete();
+
+      // 공개 프로필도 삭제
+      await _firestore
+          .collection('stores')
+          .doc(storeId)
+          .collection('workerProfiles')
           .doc(workerId)
           .delete();
           
@@ -510,6 +588,36 @@ class WorkerService {
         final worker = Worker.fromMap(doc.id, doc.data());
         await _hiveBox.put(doc.id, worker);
       }
+
+      // 2. Fetch all rosterDays overrides
+      final overridesSnap = await _firestore
+          .collectionGroup('rosterDays')
+          .where('storeId', isEqualTo: storeId)
+          .get();
+      final overrideBox = Hive.box<ScheduleOverride>('schedule_overrides');
+      await overrideBox.clear();
+      
+      for (final doc in overridesSnap.docs) {
+        final data = doc.data();
+        final date = data['date']?.toString() ?? doc.id;
+        final workerIdStr = data['workerId']?.toString() ?? '';
+        if (workerIdStr.isEmpty) continue;
+        
+        final isOff = data['isOff'] == true;
+        final checkIn = isOff ? null : data['checkIn']?.toString();
+        final checkOut = isOff ? null : data['checkOut']?.toString();
+        
+        final key = '${workerIdStr}_$date';
+        await overrideBox.put(
+          key,
+          ScheduleOverride(
+            workerId: workerIdStr,
+            date: date,
+            checkIn: checkIn,
+            checkOut: checkOut,
+          ),
+        );
+      }
     } catch (e) {
       debugPrint('Sync failed: $e');
     }
@@ -519,13 +627,17 @@ class WorkerService {
   static Future<void> stopRealtimeSync() async {
     await _sub?.cancel();
     _sub = null;
+    await _overridesSub?.cancel();
+    _overridesSub = null;
   }
 
   static Future<void> startRealtimeSync() async {
     await _sub?.cancel();
+    await _overridesSub?.cancel();
     await StoreCacheService.ensureLocalCacheBelongsToCurrentUser();
     final storeId = await _resolveStoreId();
     if (storeId.isEmpty) return;
+    
     _sub = _firestore
         .collection('stores')
         .doc(storeId)
@@ -542,6 +654,45 @@ class WorkerService {
       for (final doc in snapshot.docs) {
         final worker = Worker.fromMap(doc.id, doc.data());
         await _hiveBox.put(doc.id, worker);
+      }
+    });
+
+    final overrideBox = Hive.box<ScheduleOverride>('schedule_overrides');
+    _overridesSub = _firestore
+        .collectionGroup('rosterDays')
+        .where('storeId', isEqualTo: storeId)
+        .snapshots()
+        .listen((snapshot) async {
+      final activeKeys = <String>{};
+      
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final date = data['date']?.toString() ?? doc.id;
+        final workerIdStr = data['workerId']?.toString() ?? '';
+        if (workerIdStr.isEmpty) continue;
+        
+        final isOff = data['isOff'] == true;
+        final checkIn = isOff ? null : data['checkIn']?.toString();
+        final checkOut = isOff ? null : data['checkOut']?.toString();
+        
+        final key = '${workerIdStr}_$date';
+        activeKeys.add(key);
+        await overrideBox.put(
+          key,
+          ScheduleOverride(
+            workerId: workerIdStr,
+            date: date,
+            checkIn: checkIn,
+            checkOut: checkOut,
+          ),
+        );
+      }
+
+      // Remove locally cached overrides that were deleted in Firebase
+      for (final key in overrideBox.keys.toList()) {
+        if (!activeKeys.contains(key)) {
+          await overrideBox.delete(key);
+        }
       }
     });
   }
@@ -569,17 +720,22 @@ class WorkerService {
       final keyDate =
           '${todayKey.year}${todayKey.month.toString().padLeft(2, '0')}${todayKey.day.toString().padLeft(2, '0')}';
       final queueId = '${worker.id}_probation_end_$keyDate';
-      await _firestore.collection('notificationQueue').doc(queueId).set({
-        'dedupeKey': queueId,
-        'storeId': storeId,
-        'channel': 'pushBoss',
-        'targetUid': ownerUid,
-        'status': 'queued',
-        'message': '${worker.name}님 수습 기간이 7일 후 종료됩니다',
-        'type': 'probationEnding',
-        'workerId': worker.id,
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      // notificationQueue update 차단됨 — 이미 적재된 알림은 skip (idempotent)
+      final queueRef = _firestore.collection('notificationQueue').doc(queueId);
+      final existing = await queueRef.get();
+      if (!existing.exists) {
+        await queueRef.set({
+          'dedupeKey': queueId,
+          'storeId': storeId,
+          'channel': 'pushBoss',
+          'targetUid': ownerUid,
+          'status': 'queued',
+          'message': '${worker.name}님 수습 기간이 7일 후 종료됩니다',
+          'type': 'probationEnding',
+          'workerId': worker.id,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
     }
   }
 
@@ -701,5 +857,45 @@ class WorkerService {
       rethrow;
     }
     return fixedCount;
+  }
+
+  /// 기존 직원 데이터를 workerProfiles로 일회성 마이그레이션
+  /// 앱 시작 시 한 번 호출하여 alba_web 전체 근무표가 즉시 작동하도록 보장
+  static Future<int> backfillWorkerProfiles() async {
+    final storeId = await _resolveStoreId();
+    if (storeId.isEmpty) return 0;
+
+    int count = 0;
+    try {
+      final workersSnap = await _firestore
+          .collection('stores').doc(storeId)
+          .collection('workers')
+          .get();
+
+      for (final doc in workersSnap.docs) {
+        final data = doc.data();
+        final profileRef = _firestore
+            .collection('stores').doc(storeId)
+            .collection('workerProfiles').doc(doc.id);
+
+        final profileSnap = await profileRef.get();
+        if (!profileSnap.exists) {
+          await profileRef.set({
+            'name': data['name'] ?? '',
+            'status': data['status'] ?? 'active',
+            'workDays': data['workDays'],
+            'checkInTime': data['checkInTime'],
+            'checkOutTime': data['checkOutTime'],
+            'breakMinutes': data['breakMinutes'],
+            'workScheduleJson': data['workScheduleJson'],
+          });
+          count++;
+          debugPrint('[WorkerService] Backfilled profile: ${doc.id}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[WorkerService] Profile backfill failed: $e');
+    }
+    return count;
   }
 }

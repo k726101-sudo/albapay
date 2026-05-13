@@ -17,6 +17,15 @@ class PayrollConstants {
   /// 당해 연도 최저 임금 (기본값: 10,320원 - 2026년 기준)
   static double legalMinimumWage = 10320.0;
 
+  /// 월 소정근로시간 (주 40시간 + 주휴 8시간) × 4.345주 ≈ 209시간
+  static double standardMonthlyHours = 209.0;
+
+  /// 최저 월급 하한선 = 최저시급 × 209시간 (절대 하한)
+  static double baseMinimumSalary = 2156880.0; // 10,320 × 209
+
+  /// 비과세 식대 한도
+  static double mealTaxFreeLimit = 200000.0;
+
   /// 이전 연도 최저 임금 (합의서 비교 출력용)
   static double previousMinimumWage = 10030.0;
 

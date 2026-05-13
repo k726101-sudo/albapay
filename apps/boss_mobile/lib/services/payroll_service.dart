@@ -53,7 +53,7 @@ class PayrollService {
       final effectiveOut = payrollSettlementClockOut(
         actualClockOut: a.clockOut!,
         scheduledShiftEndIso: a.scheduledShiftEndIso,
-        overtimeApproved: a.overtimeApproved,
+        overtimeApproved: a.overtimeApproved || a.isEditedByBoss,
       );
       final stay = effectiveOut.difference(a.clockIn).inMinutes;
       if (stay <= 0) continue;

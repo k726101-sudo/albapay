@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_logic/shared_logic.dart';
@@ -51,19 +52,10 @@ class AlbaPayrollPage extends StatelessWidget {
   double _effectiveHourlyWage(Map<String, dynamic> worker, DateTime at,
       {double? minimumHourlyWage}) {
     final wage = (worker['hourlyWage'] as num?)?.toDouble() ?? 0;
-    final isProbation = worker['isProbation'] as bool? ?? false;
-    final probMonths = (worker['probationMonths'] as num?)?.toInt() ?? 0;
-    if (!isProbation || probMonths <= 0) return wage;
-    final start = DateTime.tryParse(
-        worker['startDate']?.toString() ?? worker['joinDate']?.toString() ?? '');
-    if (start == null) return wage;
-    final probEnd = DateTime(start.year, start.month + probMonths, start.day);
-    if (!at.isBefore(probEnd)) return wage;
-    final probWage = (wage * 0.9).floorToDouble();
-    if (minimumHourlyWage != null && minimumHourlyWage > 0) {
-      return probWage < minimumHourlyWage ? minimumHourlyWage : probWage;
+    if (minimumHourlyWage != null && minimumHourlyWage > 0 && wage < minimumHourlyWage) {
+      return minimumHourlyWage;
     }
-    return probWage;
+    return wage;
   }
 
   String _formatWon(double amount) {
@@ -116,6 +108,9 @@ class AlbaPayrollPage extends StatelessWidget {
               final inDay = DateTime(a.clockIn.year, a.clockIn.month, a.clockIn.day);
               return !inDay.isBefore(period.start) && !inDay.isAfter(period.end);
             }).toList();
+            
+            // 시계열 기준 최신순(내림차순) 정렬 보장
+            myAtt.sort((a, b) => b.clockIn.compareTo(a.clockIn));
 
             // Count tardy
             int tardyCount = 0;
@@ -133,8 +128,39 @@ class AlbaPayrollPage extends StatelessWidget {
                 minimumHourlyWage: minimumWage);
             final workDays =
                 (worker['workDays'] as List?)?.cast<int>() ?? const [];
+            double workerExpectedWeeklyHours = (worker['weeklyHours'] as num?)?.toDouble() ?? 0.0;
+            if (worker['workScheduleJson'] != null && worker['workScheduleJson'].toString().isNotEmpty) {
+              try {
+                final arr = jsonDecode(worker['workScheduleJson']) as List;
+                int expectedMins = 0;
+                for (final item in arr) {
+                  final daysCount = (item['days'] as List?)?.length ?? 0;
+                  final start = item['start'].toString();
+                  final end = item['end'].toString();
+                  int shiftMins = _minsFromHm(end) - _minsFromHm(start);
+                  if (shiftMins < 0) shiftMins += 24 * 60;
+                  int breakMins = (worker['breakMinutes'] as num?)?.toInt() ?? 0;
+                  if (!(worker['isPaidBreak'] as bool? ?? false)) {
+                    shiftMins -= breakMins;
+                  }
+                  if (shiftMins < 0) shiftMins = 0;
+                  expectedMins += (shiftMins * daysCount);
+                }
+                workerExpectedWeeklyHours = expectedMins / 60.0;
+              } catch (_) {}
+            }
+
+            // 식비/식대 항목 추출 (비과세 적용용)
+            double mealAllowance = 0.0;
+            for (final alw in ((worker['allowances'] as List?) ?? [])) {
+              final label = (alw['label']?.toString() ?? '').replaceAll(' ', '');
+              if (label.contains('식비') || label.contains('식대')) {
+                mealAllowance += (alw['amount'] as num?)?.toDouble() ?? 0.0;
+              }
+            }
+
             final workerData = PayrollWorkerData(
-              weeklyHoursPure: (worker['weeklyHours'] as num?)?.toDouble() ?? 0,
+              weeklyHoursPure: workerExpectedWeeklyHours,
               weeklyTotalStayMinutes:
                   (worker['totalStayMinutes'] as num?)?.toInt() ?? 0,
               breakMinutesPerShift:
@@ -144,7 +170,7 @@ class AlbaPayrollPage extends StatelessWidget {
                       worker['startDate']?.toString() ?? '') ??
                   now,
               scheduledWorkDays: workDays,
-              manualWeeklyHolidayApproval: false,
+              manualWeeklyHolidayApproval: worker['weeklyHolidayPay'] as bool? ?? false,
               allowanceAmounts: ((worker['allowances'] as List?) ?? [])
                   .map((a) => (a['amount'] as num?)?.toDouble() ?? 0.0)
                   .toList(),
@@ -152,6 +178,24 @@ class AlbaPayrollPage extends StatelessWidget {
               endDate: worker['endDate'] != null && worker['endDate'].toString().isNotEmpty
                   ? DateTime.tryParse(worker['endDate'].toString())
                   : null,
+              weeklyHolidayDay: (worker['weeklyHolidayDay'] as num?)?.toInt() ?? 0,
+              breakStartTime: worker['breakStartTime']?.toString() ?? '',
+              breakEndTime: worker['breakEndTime']?.toString() ?? '',
+              mealAllowance: mealAllowance,
+              mealTaxExempt: worker['mealTaxExempt'] as bool? ?? false,
+              applyWithholding33: worker['applyWithholding33'] as bool? ?? false,
+              deductNationalPension: worker['deductNationalPension'] as bool? ?? false,
+              deductHealthInsurance: worker['deductHealthInsurance'] as bool? ?? false,
+              deductEmploymentInsurance: worker['deductEmploymentInsurance'] as bool? ?? false,
+              graceMinutes: gracePeriod,
+              wageType: worker['wageType']?.toString() ?? 'hourly',
+              monthlyWage: (worker['monthlyWage'] as num?)?.toDouble() ?? 0.0,
+              fixedOvertimeHours: (worker['fixedOvertimeHours'] as num?)?.toDouble() ?? 0.0,
+              fixedOvertimePay: (worker['fixedOvertimePay'] as num?)?.toDouble() ?? 0.0,
+              isProbation: worker['isProbation'] as bool? ?? false,
+              probationMonths: (worker['probationMonths'] as num?)?.toInt() ?? 0,
+              wageHistoryJson: worker['wageHistoryJson']?.toString() ?? '',
+              promotionLogs: _parsePromotionLogs(worker['leavePromotionLogsJson']?.toString() ?? ''),
             );
 
             PayrollCalculationResult? result;
@@ -241,7 +285,7 @@ class AlbaPayrollPage extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 24),
-                          const Text('이번 달 예상 급여',
+                          const Text('예상 세전 급여',
                               style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.white70,
@@ -352,19 +396,79 @@ class AlbaPayrollPage extends StatelessWidget {
                                     fontWeight: FontWeight.w700,
                                     color: Colors.black54)),
                             const SizedBox(height: 12),
-                            _payRow('기본급', result.basePay),
-                            if (result.premiumPay > 0)
-                              _payRow('가산 수당 (연장·야간·휴일)',
-                                  result.premiumPay, Colors.orange.shade700),
-                            if (result.weeklyHolidayPay > 0)
-                              _payRow('주휴 수당', result.weeklyHolidayPay),
-                            if (result.breakPay > 0)
-                              _payRow('근로장려수당', result.breakPay),
-                            if (result.otherAllowancePay > 0)
-                              _payRow('기타 수당', result.otherAllowancePay),
-                            const Divider(height: 24),
-                            _payRow('합계', result.totalPay,
-                                const Color(0xFF1565C0), true),
+                                Builder(
+                                  builder: (context) {
+                                    String _fmtH(double h) => PayrollCalculator.formatHoursAsKorean(h);
+                                    double hrly = hourlyWage;
+                                    double pbH = result!.paidBreakHours;
+                                    double wH = hrly > 0 ? result.weeklyHolidayPay / hrly : 0;
+                                    
+                                    bool hasProbation = worker['isProbation'] == true && (worker['probationMonths'] ?? 0) > 0;
+                                    double effectiveHrly = hrly;
+                                    String rateText = '${_formatWon(hrly)}원';
+                                    if (hasProbation && result.pureLaborHours > 0 && result.basePay < result.pureLaborHours * hrly) {
+                                       effectiveHrly = (result.basePay / result.pureLaborHours).roundToDouble();
+                                       rateText = '${_formatWon(effectiveHrly)}원 (수습적용)';
+                                       wH = effectiveHrly > 0 ? result.weeklyHolidayPay / effectiveHrly : 0;
+                                    }
+
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        if (hasProbation && minimumWage != null && effectiveHrly < minimumWage)
+                                          Container(
+                                            margin: const EdgeInsets.only(bottom: 16),
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red.shade50,
+                                              border: Border.all(color: Colors.red.shade200),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: const Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+                                                SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    '최저임금 미달 경고: 수습 90% 적용 시급이 법정 최저임금을 하회합니다. (단순노무직 및 1년 미만 계약은 수습 감액 불가)',
+                                                    style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        _payRow('기본급', result.basePay, subtitle: '${_fmtH(result.pureLaborHours)} × $rateText'),
+                                        if (result.premiumPay > 0)
+                                          _payRow('연장/야간 가산수당', result.premiumPay, color: Colors.indigo, subtitle: '${_fmtH(result.premiumHours)} × ${_formatWon(effectiveHrly * 0.5)}원'),
+                                        
+                                        if (result.holidayPremiumPay > 0)
+                                          _payRow('근로자의 날 휴일근로가산', result.holidayPremiumPay, color: Colors.indigo),
+                                        
+                                        if (result.laborDayAllowancePay > 0)
+                                          Builder(
+                                            builder: (context) {
+                                              final allowanceHours = effectiveHrly > 0 ? result!.laborDayAllowancePay / effectiveHrly : 0.0;
+                                              final calcHours = allowanceHours * 5.0;
+                                              return _payRow('근로자의 날 유급휴일수당', result!.laborDayAllowancePay, color: Colors.blueAccent, subtitle: '(${_fmtH(calcHours)} / 40시간) × 8시간 × $rateText');
+                                            },
+                                          ),
+                                        
+                                        if (result.weeklyHolidayPay > 0)
+                                          _payRow('주휴 수당', result.weeklyHolidayPay, subtitle: '${_fmtH(wH)} × $rateText')
+                                        else if (workerExpectedWeeklyHours >= 15)
+                                          _payRow('주휴 수당', 0, subtitle: '조건 달성 대기 (만근 시 예정)', color: Colors.black38),
+
+                                        if (result.breakPay > 0)
+                                          _payRow('유급휴게수당', result.breakPay, subtitle: '${_fmtH(pbH)}시간 × $rateText'),
+                                    if (result.otherAllowancePay > 0)
+                                      _payRow('기타 수당', result.otherAllowancePay),
+                                    const Divider(height: 24),
+                                    _payRow('세전 합계', result.totalPay, color: const Color(0xFF1565C0), bold: true),
+                                  ],
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -421,6 +525,55 @@ class AlbaPayrollPage extends StatelessWidget {
                         ),
                       ),
 
+                        if (result.insuranceDeduction > 0)
+                          _card(
+                            context,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('공제 내역 (예상 4대 보험 및 세금)',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.black54)),
+                                const SizedBox(height: 12),
+                                if (result.nationalPension > 0)
+                                  _payRow('국민연금', result.nationalPension, color: Colors.red.shade400),
+                                if (result.healthInsurance > 0)
+                                  _payRow('건강보험', result.healthInsurance, color: Colors.red.shade400),
+                                if (result.longTermCareInsurance > 0)
+                                  _payRow('장기요양보험', result.longTermCareInsurance, color: Colors.red.shade400),
+                                if (result.employmentInsurance > 0)
+                                  _payRow('고용보험', result.employmentInsurance, color: Colors.red.shade400),
+                                if (result.businessIncomeTax > 0)
+                                  _payRow('사업소득세 (3%)', result.businessIncomeTax, color: Colors.red.shade400),
+                                if (result.localIncomeTax > 0)
+                                  _payRow('지방소득세 (0.3%)', result.localIncomeTax, color: Colors.red.shade400),
+                                const Divider(height: 24),
+                                _payRow('공제 합계', result.insuranceDeduction, color: Colors.red.shade700, bold: true),
+                              ],
+                            ),
+                          ),
+
+                        _card(
+                          context,
+                          child: Column(
+                            children: [
+                              const Text('예상 실지급액',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black54)),
+                              const SizedBox(height: 8),
+                              Text('${_formatWon(result.netPay)}원',
+                                  style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF1565C0))),
+                            ],
+                          ),
+                        ),
+
                       // 상세 근무 내역 (새로 추가)
                       _card(
                         context,
@@ -445,10 +598,10 @@ class AlbaPayrollPage extends StatelessWidget {
                             else ...[
                               // 현재 근무 중인 세션 먼저 표시
                               if (openAtt != null)
-                                _attendanceLogRow(openAtt, now, isCurrent: true),
+                                _attendanceLogRow(openAtt, now, gracePeriod, isCurrent: true),
                               
-                              // 과거 내역 (내림차순)
-                              ...myAtt.reversed.map((a) => _attendanceLogRow(a, now)),
+                              // 과거 내역 (내림차순 정렬된 상태)
+                              ...myAtt.map((a) => _attendanceLogRow(a, now, gracePeriod)),
                             ],
                           ],
                         ),
@@ -494,26 +647,35 @@ class AlbaPayrollPage extends StatelessWidget {
   }
 
   Widget _payRow(String label, double amount,
-      [Color? color, bool bold = false]) {
+      {Color? color, bool bold = false, String? subtitle}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(label,
-              style: TextStyle(
-                  fontSize: bold ? 15 : 13,
-                  color: bold ? Colors.black87 : Colors.black54,
-                  fontWeight:
-                      bold ? FontWeight.w800 : FontWeight.normal)),
-          Text(
-            '${_formatWon(amount)}원',
-            style: TextStyle(
-              fontSize: bold ? 16 : 14,
-              color: color ?? (bold ? const Color(0xFF1565C0) : Colors.black87),
-              fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label,
+                  style: TextStyle(
+                      fontSize: bold ? 15 : 13,
+                      color: bold ? Colors.black87 : Colors.black54,
+                      fontWeight:
+                          bold ? FontWeight.w800 : FontWeight.normal)),
+              Text(
+                '${_formatWon(amount)}원',
+                style: TextStyle(
+                  fontSize: bold ? 16 : 14,
+                  color: color ?? (bold ? const Color(0xFF1565C0) : Colors.black87),
+                  fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+                ),
+              ),
+            ],
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.black38)),
+          ],
         ],
       ),
     );
@@ -544,25 +706,50 @@ class AlbaPayrollPage extends StatelessWidget {
     );
   }
 
-  Widget _attendanceLogRow(Attendance a, DateTime now, {bool isCurrent = false}) {
+  Widget _attendanceLogRow(Attendance a, DateTime now, int graceMinutes, {bool isCurrent = false}) {
     final dateStr = '${a.clockIn.month}/${a.clockIn.day}';
     final weekday = ['일', '월', '화', '수', '목', '금', '토'][a.clockIn.weekday % 7];
     
     final inTime = _formatTime(a.clockIn);
     final outTime = a.clockOut != null ? _formatTime(a.clockOut!) : '진행중';
     
-    int mins = a.clockOut != null ? a.workedMinutes : a.workedMinutesAt(now);
+    int mins = 0;
+    DateTime? effectiveIn;
+    DateTime? effectiveOut;
+    
+    if (a.clockOut != null) {
+      effectiveIn = a.scheduledShiftStartIso != null 
+          ? payrollEffectiveClockIn(
+              actualClockIn: a.clockIn,
+              scheduledStart: DateTime.parse(a.scheduledShiftStartIso!),
+              graceMinutes: graceMinutes,
+            )
+          : a.clockIn;
+      effectiveOut = payrollSettlementClockOut(
+        actualClockOut: a.clockOut!,
+        scheduledShiftEndIso: a.scheduledShiftEndIso,
+        overtimeApproved: a.overtimeApproved || a.isEditedByBoss,
+        graceMinutes: graceMinutes,
+      );
+      mins = effectiveOut.difference(effectiveIn).inMinutes;
+    } else {
+      mins = a.workedMinutesAt(now);
+    }
+
     if (a.clockOut != null && mins > 0) {
-      int breakMins = (worker['breakMinutes'] as num?)?.toInt() ?? 0;
-      if (a.breakStart != null && a.breakEnd != null) {
-        final v = a.breakEnd!.difference(a.breakStart!).inMinutes;
-        breakMins = v > 0 ? v : 0;
-      }
+      int breakMins = PayrollCalculator.calculateAppliedBreak(
+        att: a,
+        effectiveIn: effectiveIn ?? a.clockIn,
+        effectiveOut: effectiveOut ?? a.clockOut!,
+        fallbackMinutes: (worker['breakMinutes'] as num?)?.toInt() ?? 0,
+        breakStartTimeStr: worker['breakStartTime']?.toString() ?? '',
+        breakEndTimeStr: worker['breakEndTime']?.toString() ?? '',
+      );
       mins -= breakMins;
       if (mins < 0) mins = 0;
     }
     
-    final hours = (mins / 60.0).toStringAsFixed(1);
+    final hours = PayrollCalculator.formatHoursAsKorean(mins / 60.0);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -594,12 +781,30 @@ class AlbaPayrollPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '$inTime ~ $outTime',
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87),
+                Row(
+                  children: [
+                    Text(
+                      '$inTime ~ $outTime',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87),
+                    ),
+                    if (a.attendanceStatus == 'annual_leave')
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                        child: const Text('연차', style: TextStyle(fontSize: 8, color: Colors.blue, fontWeight: FontWeight.bold)),
+                      )
+                    else if (a.isEditedByBoss)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(4)),
+                        child: const Text('사장님 수정됨', style: TextStyle(fontSize: 8, color: Colors.orange, fontWeight: FontWeight.bold)),
+                      ),
+                  ],
                 ),
                 if (isCurrent)
                   const Text('현재 근무 중입니다',
@@ -608,7 +813,7 @@ class AlbaPayrollPage extends StatelessWidget {
             ),
           ),
           Text(
-            '$hours시간',
+            hours,
             style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -627,5 +832,15 @@ class AlbaPayrollPage extends StatelessWidget {
     final p = hm.split(':');
     if (p.length != 2) return 0;
     return (int.tryParse(p[0]) ?? 0) * 60 + (int.tryParse(p[1]) ?? 0);
+  }
+
+  List<LeavePromotionStatus> _parsePromotionLogs(String json) {
+    if (json.isEmpty) return [];
+    try {
+      final List<dynamic> list = (jsonDecode(json) as List?) ?? [];
+      return list.map((e) => LeavePromotionStatus.fromMap((e as Map).cast<String, dynamic>())).toList();
+    } catch (_) {
+      return [];
+    }
   }
 }

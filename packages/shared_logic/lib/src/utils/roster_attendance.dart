@@ -1,6 +1,8 @@
 /// 근무표(기본 계약 + 일별 override)와 출퇴근 시각 판정.
 library;
 
+import 'dart:convert';
+
 /// `yyyy-MM-dd`
 String rosterDateKey(DateTime d) {
   return '${d.year.toString().padLeft(4, '0')}-'
@@ -32,7 +34,8 @@ EffectiveShift? effectiveShiftForDate({
   Map<String, dynamic>? rosterDayDoc,
 }) {
   final baseDay = date.weekday == DateTime.sunday ? 0 : date.weekday;
-  final workDays = (worker['workDays'] as List?)?.map((e) {
+  final workDays =
+      (worker['workDays'] as List?)?.map((e) {
         if (e is num) return e.toInt();
         return int.tryParse(e.toString()) ?? -1;
       }).toList() ??
@@ -46,6 +49,10 @@ EffectiveShift? effectiveShiftForDate({
     return null;
   }
 
+  if (rosterDayDoc != null && rosterDayDoc['isOff'] == true) {
+    return null; // Explicitly marked as off (e.g. substituted out or boss forced off)
+  }
+
   String? oIn = norm(rosterDayDoc?['checkIn']?.toString());
   String? oOut = norm(rosterDayDoc?['checkOut']?.toString());
 
@@ -54,9 +61,32 @@ EffectiveShift? effectiveShiftForDate({
   } else if (hasBase) {
     oIn = norm(worker['checkInTime']?.toString()) ?? '09:00';
     oOut = norm(worker['checkOutTime']?.toString()) ?? '18:00';
+
+    // 요일별 복합 스케줄이 있다면 해당 요일의 스케줄로 덮어쓰기
+    final scheduleStr = worker['workScheduleJson']?.toString() ?? '';
+    if (scheduleStr.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(scheduleStr) as List<dynamic>;
+        for (final raw in decoded) {
+          if (raw is Map<String, dynamic>) {
+            final days = raw['days'] as List<dynamic>? ?? const [];
+            if (days.any(
+              (d) =>
+                  (d is int ? d : int.tryParse(d.toString()) ?? -1) == baseDay,
+            )) {
+              oIn = norm(raw['start']?.toString()) ?? oIn;
+              oOut = norm(raw['end']?.toString()) ?? oOut;
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+    }
   } else {
     return null;
   }
+
+  if (oIn == null || oOut == null) return null;
 
   final sp = oIn.split(':');
   final ep = oOut.split(':');
@@ -87,7 +117,9 @@ bool shouldAutoApproveClockIn({
   required EffectiveShift shift,
   int earlyAllowanceMinutes = 120,
 }) {
-  final earlyLimit = shift.scheduledStart.subtract(Duration(minutes: earlyAllowanceMinutes));
+  final earlyLimit = shift.scheduledStart.subtract(
+    Duration(minutes: earlyAllowanceMinutes),
+  );
   return !now.isBefore(earlyLimit) && now.isBefore(shift.scheduledEnd);
 }
 
@@ -141,15 +173,16 @@ DateTime payrollEffectiveClockOut({
     return actualClockOut;
   }
   final scheduled = DateTime.parse(scheduledShiftEndIso);
-  
+
   if (graceMinutes > 0) {
     final earlyLimit = scheduled.subtract(Duration(minutes: graceMinutes));
     final lateLimit = scheduled.add(Duration(minutes: graceMinutes));
-    if (!actualClockOut.isBefore(earlyLimit) && !actualClockOut.isAfter(lateLimit)) {
+    if (!actualClockOut.isBefore(earlyLimit) &&
+        !actualClockOut.isAfter(lateLimit)) {
       return scheduled;
     }
   }
-  
+
   return actualClockOut.isBefore(scheduled) ? actualClockOut : scheduled;
 }
 

@@ -1,4 +1,3 @@
-
 void main() {
   print('Running dummy logic test...');
   // Since we can't run Firestore easily in a standard dart script without firebase core initialization,
@@ -6,7 +5,7 @@ void main() {
   final startDay = DateTime.now().subtract(const Duration(days: 40));
   
   final dummyWorkers = [
-    {'id': 'worker_a', 'name': '가상 김점장', 'wage': 12000, 'hours': 8, 'phone': '01011112222', 'isPaidBreak': true, 'workDays': [1, 2, 3, 4], 'in': '09:00', 'out': '18:00'},
+    {'id': 'worker_a', 'name': '가상 김점장', 'wage': 12000, 'hours': 8, 'phone': '01011112222', 'isPaidBreak': false, 'workDays': [1, 2, 3, 4, 5], 'in': '09:00', 'out': '18:00', 'wageType': 'monthly', 'targetSalary': 2500000},
     {'id': 'worker_b', 'name': '가상 이주간', 'wage': 10500, 'hours': 7, 'phone': '01033334444', 'isPaidBreak': true, 'workDays': [1, 2, 3, 4], 'in': '10:00', 'out': '18:00'},
     {'id': 'worker_c', 'name': '가상 박오전', 'wage': 12000, 'hours': 6, 'phone': '01055556666', 'isPaidBreak': false, 'workDays': [1, 2, 3, 4], 'in': '06:00', 'out': '13:00'},
   ];

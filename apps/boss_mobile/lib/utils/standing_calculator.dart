@@ -11,6 +11,7 @@ class StandingResult {
   final double average;
   final int totalPersonDays;
   final int totalDays;
+  final int operatingDays;
   final int daysWithFiveOrMore;
   final bool isFiveOrMore;
   final int daysWithTenOrMore;
@@ -22,6 +23,7 @@ class StandingResult {
     required this.average,
     required this.totalPersonDays,
     required this.totalDays,
+    required this.operatingDays,
     required this.daysWithFiveOrMore,
     required this.isFiveOrMore,
     required this.daysWithTenOrMore,
@@ -117,6 +119,7 @@ StandingResult calculateStandingFromAttendances({
     final weekday = day.weekday % 7; // 0=Sun, ..., 6=Sat (matched Worker.workDays)
 
     for (final staff in staffList) {
+      if (staff.workerType == 'dispatch') continue;
       if (staff.name.contains('가상')) {
         // 해당 요일이 가상직원의 근무요일에 포함되어 있다면 인원수로 추가
         if (staff.workDays.contains(weekday)) {
@@ -157,7 +160,7 @@ StandingResult calculateStandingFromAttendances({
       reason = '[정상 적용] 한 달 평균 5인 이상 근무하며, 5인 이상 출근한 날도 영업일의 절반(1/2)을 넘으므로 최종적으로 [5인 이상] 사업장으로 판정되었습니다.';
     }
   } else {
-    if (daysWithFiveOrMore >= halfDays) {
+    if (operatingDays > 0 && daysWithFiveOrMore >= halfDays) {
       // 시행령 제7조의2 제3항 예외
       isFiveOrMore = true;
       reason = '[특별 조항 적용] 한 달 평균 근무자는 5인 미만이지만, 5인 이상이 동시에 출근한 날이 한 달 영업일의 절반(1/2) 이상을 차지하므로 노동법상 [5인 이상] 사업장으로 간주됩니다.';
@@ -172,6 +175,7 @@ StandingResult calculateStandingFromAttendances({
     average: average,
     totalPersonDays: totalPersonDays,
     totalDays: totalDays,
+    operatingDays: operatingDays,
     daysWithFiveOrMore: daysWithFiveOrMore,
     isFiveOrMore: isFiveOrMore,
     daysWithTenOrMore: daysWithTenOrMore,

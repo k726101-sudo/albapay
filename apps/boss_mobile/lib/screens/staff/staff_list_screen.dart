@@ -57,6 +57,7 @@ class _StaffListScreenState extends State<StaffListScreen> {
           backgroundColor: const Color(0xFFF2F2F7),
           appBar: AppBar(
             backgroundColor: const Color(0xFF1a1a2e),
+            foregroundColor: Colors.white,
             title: const Text(
               '직원 관리',
               style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
@@ -208,30 +209,42 @@ class _StaffListScreenState extends State<StaffListScreen> {
                                     spacing: 4,
                                     runSpacing: 4,
                                     children: [
-                                      const Text('시급: ', style: TextStyle(fontSize: 12, color: Color(0xFF888888))),
-                                      Text(
-                                        '${_fmtWage(worker.hourlyWage)}원',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFF1a6ebd),
-                                        ),
-                                      ),
-                                      InkWell(
-                                        onTap: () => showWageEditDialog(context, worker),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF1a6ebd).withAlpha(25),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: const Icon(
-                                            Icons.edit_outlined,
-                                            size: 14,
+                                      if (worker.wageType == 'monthly') ...[
+                                        const Text('월급: ', style: TextStyle(fontSize: 12, color: Color(0xFF888888))),
+                                        Text(
+                                          '${_fmtWage(worker.monthlyWage)}원',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
                                             color: Color(0xFF1a6ebd),
                                           ),
                                         ),
-                                      ),
+                                      ] else ...[
+                                        const Text('시급: ', style: TextStyle(fontSize: 12, color: Color(0xFF888888))),
+                                        Text(
+                                          '${_fmtWage(worker.hourlyWage)}원',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF1a6ebd),
+                                          ),
+                                        ),
+                                        InkWell(
+                                          onTap: () => showWageEditDialog(context, worker),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF1a6ebd).withAlpha(25),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Icon(
+                                              Icons.edit_outlined,
+                                              size: 14,
+                                              color: Color(0xFF1a6ebd),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                       Text(
                                         ' · ${worker.phone}',
                                         style: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
@@ -285,6 +298,8 @@ class _StaffListScreenState extends State<StaffListScreen> {
                                       _showSpecialExtensionDialog(context, worker);
                                     } else if (val == 'send_invite') {
                                       _handleResendInvite(context, worker);
+                                    } else if (val == 'reset_device') {
+                                      _handleResetDevice(context, worker);
                                     }
                                   },
                                   itemBuilder: (ctx) => [
@@ -295,6 +310,16 @@ class _StaffListScreenState extends State<StaffListScreen> {
                                           Icon(Icons.send_rounded, size: 16, color: Color(0xFF1a6ebd)),
                                           SizedBox(width: 8),
                                           Text('초대 코드 보내기', style: TextStyle(fontSize: 13)),
+                                        ],
+                                      ),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'reset_device',
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.phonelink_erase, size: 16, color: Colors.orange),
+                                          SizedBox(width: 8),
+                                          Text('기기 연동 해제', style: TextStyle(fontSize: 13)),
                                         ],
                                       ),
                                     ),
@@ -433,6 +458,50 @@ class _StaffListScreenState extends State<StaffListScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _handleResetDevice(BuildContext context, Worker worker) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('기기 연동 해제'),
+        content: Text('${worker.name} 직원이 새로운 기기에서 로그인할 수 있도록 기존 기기 연동을 해제합니다.\n연동 해제 후, 초대 코드를 다시 전송해 주세요.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('해제하기'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final storeId = await WorkerService.resolveStoreId();
+      if (storeId.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('stores')
+            .doc(storeId)
+            .collection('workers')
+            .doc(worker.id)
+            .update({
+          'uid': FieldValue.delete(),
+          'linkedAt': FieldValue.delete(),
+        });
+      }
+      
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${worker.name}님의 기기 연동이 해제되었습니다.')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('기기 연동 해제에 실패했습니다.')),
+      );
+    }
   }
 
   Future<void> _handleTerminate(BuildContext context, Worker worker) async {

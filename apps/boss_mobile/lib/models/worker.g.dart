@@ -67,19 +67,31 @@ class WorkerAdapter extends TypeAdapter<Worker> {
       usedAnnualLeave: fields[46] == null ? 0.0 : fields[46] as double,
       annualLeaveManualAdjustment:
           fields[48] == null ? 0.0 : fields[48] as double,
+      annualLeaveInitialAdjustment:
+          fields[53] == null ? 0.0 : fields[53] as double,
+      annualLeaveInitialAdjustmentReason:
+          fields[54] == null ? '' : fields[54] as String,
       leaveUsageLogs:
           fields[47] == null ? [] : (fields[47] as List).cast<LeaveUsageLog>(),
       inviteCode: fields[49] as String?,
       previousMonthAdjustment: fields[50] == null ? 0.0 : fields[50] as double,
       manualAverageDailyWage: fields[51] == null ? 0.0 : fields[51] as double,
       employeeId: fields[52] as String?,
+      leavePromotionLogsJson: fields[55] == null ? '' : fields[55] as String,
+      wageType: fields[56] == null ? 'hourly' : fields[56] as String,
+      monthlyWage: fields[57] == null ? 0.0 : fields[57] as double,
+      fixedOvertimeHours: fields[58] == null ? 0.0 : fields[58] as double,
+      fixedOvertimePay: fields[59] == null ? 0.0 : fields[59] as double,
+      mealTaxExempt: fields[60] == null ? false : fields[60] as bool,
+      isPaperContract: fields[61] == null ? false : fields[61] as bool,
+      wageHistoryJson: fields[62] == null ? '' : fields[62] as String,
     );
   }
 
   @override
   void write(BinaryWriter writer, Worker obj) {
     writer
-      ..writeByte(53)
+      ..writeByte(63)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -178,6 +190,10 @@ class WorkerAdapter extends TypeAdapter<Worker> {
       ..write(obj.leaveUsageLogs)
       ..writeByte(48)
       ..write(obj.annualLeaveManualAdjustment)
+      ..writeByte(53)
+      ..write(obj.annualLeaveInitialAdjustment)
+      ..writeByte(54)
+      ..write(obj.annualLeaveInitialAdjustmentReason)
       ..writeByte(49)
       ..write(obj.inviteCode)
       ..writeByte(50)
@@ -185,7 +201,23 @@ class WorkerAdapter extends TypeAdapter<Worker> {
       ..writeByte(51)
       ..write(obj.manualAverageDailyWage)
       ..writeByte(52)
-      ..write(obj.employeeId);
+      ..write(obj.employeeId)
+      ..writeByte(55)
+      ..write(obj.leavePromotionLogsJson)
+      ..writeByte(56)
+      ..write(obj.wageType)
+      ..writeByte(57)
+      ..write(obj.monthlyWage)
+      ..writeByte(58)
+      ..write(obj.fixedOvertimeHours)
+      ..writeByte(59)
+      ..write(obj.fixedOvertimePay)
+      ..writeByte(60)
+      ..write(obj.mealTaxExempt)
+      ..writeByte(61)
+      ..write(obj.isPaperContract)
+      ..writeByte(62)
+      ..write(obj.wageHistoryJson);
   }
 
   @override

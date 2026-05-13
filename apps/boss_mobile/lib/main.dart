@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -20,10 +22,14 @@ import 'services/worker_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/store_info_page.dart';
+import 'screens/alba/alba_main_screen.dart';
 import 'theme/app_theme.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/server_cleanup_service.dart';
 import 'firebase_options.dart';
+import 'screens/web/web_invite_landing_screen.dart';
+import 'screens/web/web_access_denied_screen.dart';
+import 'screens/web/web_doc_view_screen.dart';
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {
@@ -61,6 +67,9 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // 백그라운드/종료 상태 FCM 메시지 핸들러 등록 (#6)
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   if (false && kDebugMode && !kIsWeb) { // 운영 서버 연결(옵션 1)을 위해 에뮬레이터 접속 강제 비활성화
     // 사장님의 현재 WiFi 실시간 IP (192.168.0.168)로 접속 방식을 통일합니다.
@@ -123,8 +132,13 @@ void main() async {
     await WorkerService.syncFromFirebase();
     await WorkerService.startRealtimeSync();
     await WorkerService.enqueueProbationEndingAlerts();
+    // 기존 직원 → workerProfiles 일회성 마이그레이션 (이미 존재하면 skip)
+    await WorkerService.backfillWorkerProfiles();
   });
 }
+
+/// 전역 Navigator 키 (푸시 알림 탭 시 화면 이동용)
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 class BossApp extends StatefulWidget {
   const BossApp({super.key});
@@ -153,8 +167,16 @@ class _BossAppState extends State<BossApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: '알바급여정석 - 사장님용',
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.touch,
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.trackpad,
+        },
+      ),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -169,18 +191,51 @@ class _BossAppState extends State<BossApp> {
         scaffoldBackgroundColor: const Color(0xFFF2F2F7),
       ),
       builder: (context, child) {
-        return Container(
-          color: const Color(0xFFF2F2F7), // 하단 네비게이션 바와 위화감 없도록 기본 배경색 연동
-          child: SafeArea(
-            top: false, // 상단은 AppBar가 알아서 처리
-            left: true, // 아이패드, Z폴드, 가로모드 컷아웃(노치) 보호
-            right: true,
-            bottom: true, // 하단 제스처/네비게이션 바 침범 방지 (글로벌 적용)
-            child: child ?? const SizedBox.shrink(),
+        final inner = GestureDetector(
+          onTap: () {
+            // 빈 공간 터치 시 키보드 숨김 처리 (주로 iOS에서 필수)
+            FocusManager.instance.primaryFocus?.unfocus();
+          },
+          behavior: HitTestBehavior.translucent,
+          child: Container(
+            color: const Color(0xFFF2F2F7), // 하단 네비게이션 바와 위화감 없도록 기본 배경색 연동
+            child: SafeArea(
+              top: false, // 상단은 AppBar가 알아서 처리
+              left: true, // 아이패드, Z폴드, 가로모드 컷아웃(노치) 보호
+              right: true,
+              bottom: true, // 하단 제스처/네비게이션 바 침범 방지 (글로벌 적용)
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
+
+        if (kIsWeb) {
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600),
+              child: inner,
+            ),
+          );
+        }
+        return inner;
       },
       home: const _AuthGate(),
+      onGenerateRoute: (settings) {
+        if (!kIsWeb) return null;
+        final uri = Uri.parse(settings.name ?? '');
+        // 웹에서 /doc-view?id=xxx&storeId=yyy 접근 시 서류 뷰어로 라우팅
+        if (uri.path == '/doc-view') {
+          final id = uri.queryParameters['id'] ?? '';
+          final storeId = uri.queryParameters['storeId'] ?? '';
+          if (id.isNotEmpty && storeId.isNotEmpty) {
+            return MaterialPageRoute(
+              builder: (_) => WebDocViewScreen(docId: id, storeId: storeId),
+              settings: settings,
+            );
+          }
+        }
+        return null;
+      },
     );
   }
 }
@@ -198,11 +253,49 @@ class _AuthGateState extends State<_AuthGate> {
   final _consentService = ConsentService();
   final _db = FirebaseFirestore.instance;
   String? _pushBoundForStoreId;
+  bool _pushPermissionAsked = false;
 
   @override
   void initState() {
     super.initState();
     _listenLinks();
+    _initPushHandlers();
+  }
+
+  void _initPushHandlers() {
+    if (kIsWeb) return;
+    PushService.instance.initializeHandlers(navigatorKey: navigatorKey);
+
+    // 포그라운드 메시지 수신 시 SnackBar 표시
+    PushService.instance.onForegroundMessage = (message) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx == null) return;
+      final title = message.notification?.title ?? '';
+      final body = message.notification?.body ?? '';
+      if (title.isEmpty && body.isEmpty) return;
+
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (title.isNotEmpty)
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+              if (body.isNotEmpty)
+                Text(body, style: const TextStyle(fontSize: 13)),
+            ],
+          ),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: '확인',
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
+        ),
+      );
+    };
   }
 
   Future<void> _listenLinks() async {
@@ -218,22 +311,58 @@ class _AuthGateState extends State<_AuthGate> {
     });
   }
 
+  bool _isWebInvite = false;
+  String? _webInviteCode;
+
   Future<void> _handleLink(Uri uri) async {
     final link = uri.toString();
-    if (!_authService.isSignInWithEmailLink(link)) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final email = prefs.getString('emailForSignIn')?.trim();
-    if (email == null || email.isEmpty) return;
+    if (kIsWeb && uri.path.startsWith('/invite')) {
+      final code = uri.queryParameters['code'] ?? uri.queryParameters['invite'];
+      if (mounted) {
+        setState(() {
+          _isWebInvite = true;
+          _webInviteCode = code;
+        });
+      }
+      return;
+    }
 
-    final cred = await _authService.signInWithEmailLink(email, link);
-    if (cred != null) {
-      await prefs.remove('emailForSignIn');
+    // 1. Email Link 파싱
+    if (_authService.isSignInWithEmailLink(link)) {
+      final prefs = await SharedPreferences.getInstance();
+      final email = prefs.getString('emailForSignIn')?.trim();
+      if (email == null || email.isEmpty) return;
+
+      final cred = await _authService.signInWithEmailLink(email, link);
+      if (cred != null) {
+        await prefs.remove('emailForSignIn');
+      }
+      return;
+    }
+
+    // 2. 초대 코드 파싱 (ex: https://.../invite?code=ABCDEF 또는 ?invite=ABCDEF)
+    final inviteCode = uri.queryParameters['code'] ?? uri.queryParameters['invite'];
+    if (inviteCode != null && inviteCode.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pending_invite_code', inviteCode);
+    }
+
+    // 3. 출퇴근 QR 딥링크 파싱 (ex: ?action=attendance&storeId=...)
+    final action = uri.queryParameters['action'];
+    final storeId = uri.queryParameters['storeId'] ?? uri.queryParameters['store_id'];
+    if (action == 'attendance' && storeId != null && storeId.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pending_attendance_store_id', storeId);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isWebInvite) {
+      return WebInviteLandingScreen(inviteCode: _webInviteCode);
+    }
+
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snap) {
@@ -299,7 +428,44 @@ class _AuthGateState extends State<_AuthGate> {
                   return const StoreInfoPage(isOnboarding: true);
                 }
 
+                final workerId = data?['workerId'];
+                final isWorker = workerId is String && workerId.trim().isNotEmpty;
+
                 final trimmedStoreId = storeId.trim();
+
+                if (isWorker) {
+                  if (kIsWeb) {
+                    return WebAccessDeniedScreen();
+                  }
+
+                  if (_pushBoundForStoreId != trimmedStoreId) {
+                    _pushBoundForStoreId = trimmedStoreId;
+                    AppClock.syncWithFirestore(trimmedStoreId);
+                    unawaited(
+                      PushService.instance.bindWorkerPush(
+                        uid: user.uid,
+                        storeId: trimmedStoreId,
+                        workerId: workerId.trim(),
+                      ),
+                    );
+                    // 알림 권한 사전 요청 (#5)
+                    if (!_pushPermissionAsked) {
+                      _pushPermissionAsked = true;
+                      Future.delayed(const Duration(seconds: 2), () {
+                        final ctx = navigatorKey.currentContext;
+                        if (ctx != null) {
+                          PushService.instance.requestPermissionWithExplanation(ctx);
+                        }
+                      });
+                    }
+                  }
+
+                  return AlbaMainScreen(
+                    storeId: trimmedStoreId,
+                    workerId: workerId.trim(),
+                  );
+                }
+
                 if (_pushBoundForStoreId != trimmedStoreId) {
                   _pushBoundForStoreId = trimmedStoreId;
                   AppClock.syncWithFirestore(trimmedStoreId);
@@ -309,6 +475,16 @@ class _AuthGateState extends State<_AuthGate> {
                       storeId: trimmedStoreId,
                     ),
                   );
+                  // 알림 권한 사전 요청 (#5)
+                  if (!_pushPermissionAsked) {
+                    _pushPermissionAsked = true;
+                    Future.delayed(const Duration(seconds: 2), () {
+                      final ctx = navigatorKey.currentContext;
+                      if (ctx != null) {
+                        PushService.instance.requestPermissionWithExplanation(ctx);
+                      }
+                    });
+                  }
                 }
 
                 return const MainScreen();

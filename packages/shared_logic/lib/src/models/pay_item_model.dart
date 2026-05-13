@@ -4,15 +4,9 @@ class CustomPayItem {
   final String label;
   final int amount;
 
-  const CustomPayItem({
-    required this.label,
-    required this.amount,
-  });
+  const CustomPayItem({required this.label, required this.amount});
 
-  Map<String, dynamic> toJson() => {
-        'label': label,
-        'amount': amount,
-      };
+  Map<String, dynamic> toJson() => {'label': label, 'amount': amount};
 
   factory CustomPayItem.fromJson(Map<String, dynamic> json) {
     return CustomPayItem(

@@ -21,13 +21,14 @@ class ScheduleOverrideAdapter extends TypeAdapter<ScheduleOverride> {
       date: fields[1] as String,
       checkIn: fields[2] as String?,
       checkOut: fields[3] as String?,
+      leaveType: fields[4] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, ScheduleOverride obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(5)
       ..writeByte(0)
       ..write(obj.workerId)
       ..writeByte(1)
@@ -35,7 +36,9 @@ class ScheduleOverrideAdapter extends TypeAdapter<ScheduleOverride> {
       ..writeByte(2)
       ..write(obj.checkIn)
       ..writeByte(3)
-      ..write(obj.checkOut);
+      ..write(obj.checkOut)
+      ..writeByte(4)
+      ..write(obj.leaveType);
   }
 
   @override

@@ -42,61 +42,88 @@ class RetiredWorkerDocumentsScreen extends StatelessWidget {
             return const Center(child: Text('보존된 노무 서류가 없습니다.'));
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: workerDocs.length,
-            itemBuilder: (context, index) {
-              final doc = workerDocs[index];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ListTile(
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: _getDocColor(doc.type).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      _getDocIcon(doc.type),
-                      color: _getDocColor(doc.type),
-                      size: 20,
-                    ),
-                  ),
-                  title: Text(doc.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(_statusSubtitle(doc)),
-                  trailing: _buildStatusBadge(doc.status),
-                  onTap: () {
-                    if (doc.type == DocumentType.checklist) {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => HiringChecklistScreen(worker: worker, storeId: storeId, document: doc)));
-                      return;
-                    }
-                    if (doc.type == DocumentType.worker_record) {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => WorkerRecordScreen(worker: worker, document: doc)));
-                      return;
-                    }
-                    if (doc.type == DocumentType.night_consent) {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => NightConsentScreen(worker: worker, document: doc)));
-                      return;
-                    }
-                    if (doc.type == DocumentType.attendance_record) {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => AttendanceRecordScreen(worker: worker, storeId: storeId)));
-                      return;
-                    }
-                    if (doc.type == DocumentType.wageStatement || doc.type == DocumentType.wage_ledger) {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentExportPage(storeId: storeId)));
-                      return;
-                    }
-                    if (doc.type == DocumentType.contract_full || doc.type == DocumentType.contract_part) {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => ContractPage(worker: worker, storeId: storeId, documentId: doc.id)));
-                      return;
-                    }
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentContentPage(worker: worker, documentId: doc.id, storeId: storeId, initialDocument: doc)));
+          return Column(
+            children: [
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: workerDocs.length,
+                  itemBuilder: (context, index) {
+                    final doc = workerDocs[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: _getDocColor(doc.type).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            _getDocIcon(doc.type),
+                            color: _getDocColor(doc.type),
+                            size: 20,
+                          ),
+                        ),
+                        title: Text(doc.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(_statusSubtitle(doc)),
+                        trailing: _buildStatusBadge(doc.status),
+                        onTap: () {
+                          if (doc.type == DocumentType.checklist) {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => HiringChecklistScreen(worker: worker, storeId: storeId, document: doc)));
+                            return;
+                          }
+                          if (doc.type == DocumentType.worker_record) {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => WorkerRecordScreen(worker: worker, document: doc)));
+                            return;
+                          }
+                          if (doc.type == DocumentType.night_consent) {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => NightConsentScreen(worker: worker, document: doc)));
+                            return;
+                          }
+                          if (doc.type == DocumentType.attendance_record) {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => AttendanceRecordScreen(worker: worker, storeId: storeId)));
+                            return;
+                          }
+                          if (doc.type == DocumentType.wageStatement || doc.type == DocumentType.wage_ledger) {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentExportPage(storeId: storeId)));
+                            return;
+                          }
+                          if (doc.type == DocumentType.contract_full || doc.type == DocumentType.contract_part) {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => ContractPage(worker: worker, storeId: storeId, documentId: doc.id)));
+                            return;
+                          }
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentContentPage(worker: worker, documentId: doc.id, storeId: storeId, initialDocument: doc)));
+                        },
+                      ),
+                    );
                   },
                 ),
-              );
-            },
+              ),
+              // ── 출퇴근 기록부 영구 확인 버튼 (동적 생성) ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0).copyWith(bottom: 32.0), // 하단 여유 공간 추가
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AttendanceRecordScreen(
+                        worker: worker,
+                        storeId: storeId,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.access_time, color: Colors.blueGrey),
+                  label: const Text('출퇴근 기록부 확인 및 PDF 발급 🖨️', style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 44),
+                    side: BorderSide(color: Colors.grey.shade300),
+                  ),
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -147,6 +174,7 @@ class RetiredWorkerDocumentsScreen extends StatelessWidget {
       case DocumentType.wage_ledger:
       case DocumentType.wage_amendment: return Icons.request_quote_outlined;
       case DocumentType.annual_leave_ledger: return Icons.event_available_outlined;
+      case DocumentType.resignation_letter: return Icons.exit_to_app;
       default: return Icons.article_outlined;
     }
   }
@@ -164,6 +192,7 @@ class RetiredWorkerDocumentsScreen extends StatelessWidget {
       case DocumentType.wage_ledger:
       case DocumentType.wage_amendment: return const Color(0xFFE64A19);
       case DocumentType.annual_leave_ledger: return const Color(0xFF00796B);
+      case DocumentType.resignation_letter: return const Color(0xFF757575);
       default: return const Color(0xFF888888);
     }
   }

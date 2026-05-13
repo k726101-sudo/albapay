@@ -11,17 +11,21 @@ class InvitationService {
     required String staffName,
     required String inviteCode,
   }) async {
-    final inviteUrl =
-        'https://$_albaWebOriginHost/?invite_code=${Uri.encodeComponent(inviteCode)}&store_id=${Uri.encodeComponent(storeId)}';
-
     final text = [
+      '직원 초대 코드 -',
       '안녕하세요.',
-      '아래 정보로 앱에 접속해 주세요.',
-      '매장: $storeName',
-      '알바생: $staffName',
-      '초대 코드: $inviteCode',
-      '초대 링크: $inviteUrl',
-      // WebOTP / iOS 키보드 "메시지에서 코드" 자동완성 트리거
+      "[$storeName] 매장에 초대합니다. 🎉",
+      '',
+      '1️⃣ 먼저 앱을 설치해 주세요.',
+      '👉 https://standard-albapay.web.app/download',
+      '(안드로이드·아이폰 자동 연결)',
+      '',
+      '2️⃣ 설치가 끝났다면, 꼭 아래 링크를 눌러서 앱을 실행해 주세요! (초대코드가 자동 입력됩니다)',
+      '👉 접속 링크: https://standard-albapay.web.app/invite?code=$inviteCode',
+      '',
+      '※ 수동 입력용 번호: $inviteCode (알바생: $staffName)',
+      '',
+      // WebOTP 자동완성 트리거용 (보이지 않거나 무시됨)
       '@$_albaWebOriginHost #$inviteCode',
     ].join('\n');
 

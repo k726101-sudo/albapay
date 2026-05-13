@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../models/worker.dart';
 import '../../services/worker_service.dart';
+import '../../utils/pdf/pdf_generator_service.dart';
 import 'exception_approval_screen.dart';
 import '../../widgets/store_id_gate.dart';
 import '../staff/add_staff_screen.dart';
@@ -23,6 +24,22 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
   
   int _monthOffset = 0;
   bool _isInitialized = false;
+  
+  String? _lastStoreId;
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _storeStream;
+  Stream<List<Attendance>>? _attendanceStream;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final box = Hive.box('user_settings');
+    final storeId = box.get('currentStoreId');
+    if (storeId != null && storeId != _lastStoreId) {
+      _lastStoreId = storeId;
+      _storeStream = FirebaseFirestore.instance.collection('stores').doc(storeId).snapshots();
+      _attendanceStream = DatabaseService().streamAttendance(storeId);
+    }
+  }
 
   DateTime _getBaseDate(DateTime now, int offset) {
     int y = now.year;
@@ -47,6 +64,12 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     required Map<String, PayrollCalculationResult> staffSummaries,
     required DateTime periodStart,
     required DateTime periodEnd,
+    required bool isFiveOrMore,
+    required String isFiveOrMoreSource,
+    required int daysWithFiveOrMore,
+    required int operatingDays,
+    required double averageWorkers,
+    required String fiveOrMoreDecisionReason,
   }) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -85,27 +108,53 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
           'periodEnd': periodEnd.toIso8601String(),
           'basePay': summary.basePay,
           'premiumPay': summary.premiumPay,
+          'laborDayAllowancePay': summary.laborDayAllowancePay,
+          'holidayPremiumPay': summary.holidayPremiumPay,
           'weeklyHolidayPay': summary.weeklyHolidayPay,
           'breakPay': summary.breakPay,
           'otherAllowancePay': summary.otherAllowancePay,
           'totalPay': summary.totalPay,
           'pureLaborHours': summary.pureLaborHours,
           'hourlyRate': staff.hourlyWage,
+          // ★ 정산기간 5인 판정 스냅샷 (확정 시점 박제 — 과거 명세서 무결성 보장)
+          'isFiveOrMore': isFiveOrMore,
+          'isFiveOrMoreSource': isFiveOrMoreSource,
+          'daysWithFiveOrMore': daysWithFiveOrMore,
+          'operatingDays': operatingDays,
+          'averageWorkers': averageWorkers,
+          'fiveOrMoreDecisionReason': fiveOrMoreDecisionReason,
         };
 
-        final doc = LaborDocument(
+        // 최소 3년 보관 (근로기준법 제48조)
+        final retentionDate = DateTime(now.year + 3, now.month, now.day);
+        final docWithRetention = LaborDocument(
           id: docId,
           staffId: staff.id,
           storeId: storeId,
           type: DocumentType.wageStatement,
           title: title,
-          status: 'sent', // 교부 완료 상태로 발송
+          status: 'sent',
           createdAt: now,
           sentAt: now,
           dataJson: jsonEncode(payrollData),
+          retentionUntil: retentionDate,
         );
 
-        await db.saveDocument(doc);
+        await db.saveDocument(docWithRetention);
+
+        // ★ R2 자동 아카이브 (임금명세서 PDF 확정본 보관)
+        try {
+          final pdfBytes = await PdfGeneratorService.generateWageStatement(
+            document: docWithRetention,
+            wageData: payrollData,
+          );
+          await PdfArchiveService.instance.archiveSignedDocument(
+            doc: docWithRetention,
+            pdfBytes: pdfBytes,
+          );
+        } catch (archiveError) {
+          debugPrint('⚠️ 임금명세서 R2 아카이브 실패 (발송은 정상 완료): $archiveError');
+        }
         count++;
       }
 
@@ -129,16 +178,16 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
   Widget build(BuildContext context) {
     return StoreIdGate(
       builder: (context, storeId) {
-        final storesRef = FirebaseFirestore.instance.collection('stores').doc(storeId);
-
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: storesRef.snapshots(),
+          stream: _storeStream ?? const Stream.empty(),
           builder: (context, storeSnapshot) {
             final storeData = storeSnapshot.data?.data();
             final settlementStartDay =
                 (storeData?['settlementStartDay'] as num?)?.toInt() ?? 1;
             final settlementEndDay =
                 (storeData?['settlementEndDay'] as num?)?.toInt() ?? 31;
+            final gracePeriod =
+                (storeData?['attendanceGracePeriodMinutes'] as num?)?.toInt() ?? 0;
 
             if (storeSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
@@ -152,7 +201,7 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                 final staffList = WorkerService.getAll();
 
                 return StreamBuilder<List<Attendance>>(
-                  stream: DatabaseService().streamAttendance(storeId),
+                  stream: _attendanceStream ?? const Stream.empty(),
                   builder: (context, attSnapshot) {
                     if (attSnapshot.hasError) {
                       return Center(child: Text('출퇴근 데이터 스트림 에러: ${attSnapshot.error}', style: const TextStyle(color: Colors.red)));
@@ -222,6 +271,14 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                       final staffAllHistory = allAttendance
                           .where((a) => a.staffId == staff.id)
                           .toList();
+                      double mealAllowance = 0.0;
+                      for (final alw in staff.allowances) {
+                        final label = alw.label.replaceAll(' ', '');
+                        if (label.contains('식비') || label.contains('식대')) {
+                          mealAllowance += alw.amount;
+                        }
+                      }
+
                       final workerData = PayrollWorkerData(
                         weeklyHoursPure: staff.weeklyHours,
                         weeklyTotalStayMinutes: staff.totalStayMinutes,
@@ -238,20 +295,48 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                         allowanceAmounts:
                             staff.allowances.map((a) => a.amount).toList(),
                         usedAnnualLeave: staff.usedAnnualLeave,
+                        manualAdjustment: staff.annualLeaveManualAdjustment,
                         endDate: staff.endDate != null && staff.endDate!.isNotEmpty
                             ? DateTime.tryParse(staff.endDate!)
                             : null,
+                        previousMonthAdjustment: staff.previousMonthAdjustment,
                         applyWithholding33: staff.applyWithholding33,
                         deductNationalPension: staff.deductNationalPension,
                         deductHealthInsurance: staff.deductHealthInsurance,
                         deductEmploymentInsurance: staff.deductEmploymentInsurance,
+                        isVirtual: staff.name.contains('가상'),
+                        weeklyHolidayDay: staff.weeklyHolidayDay,
+                        breakStartTime: staff.breakStartTime,
+                        breakEndTime: staff.breakEndTime,
+                        graceMinutes: gracePeriod,
+                        wageType: staff.wageType,
+                        monthlyWage: staff.monthlyWage,
+                        fixedOvertimeHours: staff.fixedOvertimeHours,
+                        fixedOvertimePay: staff.fixedOvertimePay,
+                        mealAllowance: mealAllowance,
+                        mealTaxExempt: staff.mealTaxExempt,
+                        isProbation: staff.isProbation,
+                        probationMonths: staff.probationMonths,
+                        wageHistoryJson: staff.wageHistoryJson,
+                        promotionLogs: _parsePromotionLogs(staff.leavePromotionLogsJson),
                       );
+
+                      final isInactive = staff.status == 'inactive';
+                      DateTime localPeriodEnd = period.end;
+                      
+                      // 퇴사자의 경우 정산 종료일을 퇴사일로 연장 (사장님 요청: 15일 이후 근무분 합산)
+                      if (isInactive && staff.endDate != null && staff.endDate!.isNotEmpty) {
+                        final exitDate = DateTime.tryParse(staff.endDate!);
+                        if (exitDate != null && exitDate.isAfter(period.end)) {
+                          localPeriodEnd = exitDate;
+                        }
+                      }
 
                       final result = PayrollCalculator.calculate(
                         workerData: workerData,
-                        shifts: staffAttendance,
+                        shifts: staffAttendance.where((a) => !a.clockIn.isAfter(localPeriodEnd.add(const Duration(hours: 23, minutes: 59)))).toList(),
                         periodStart: period.start,
-                        periodEnd: period.end,
+                        periodEnd: localPeriodEnd,
                         hourlyRate: effectiveWage,
                         isFiveOrMore: standing.isFiveOrMore || isFiveOrMoreByStore,
                         allHistoricalAttendances: staffAllHistory,
@@ -371,12 +456,25 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                                         staff,
                                         summary,
                                         manualWeeklyHolidayApproved: approved,
-                                        onManualWeeklyHolidayApprovalChanged: (v) {
-                                          setState(() {
-                                            _manualWeeklyHolidayApproval[staff.id] = v;
-                                          });
+                                        onManualWeeklyHolidayApprovalChanged: (v) async {
+                                          _manualWeeklyHolidayApproval[staff.id] = v;
+                                          
+                                          // DB에 상태 영구 유지
+                                          await FirebaseFirestore.instance
+                                              .collection('stores')
+                                              .doc(storeId)
+                                              .collection('staffs')
+                                              .doc(staff.id)
+                                              .update({'weeklyHolidayPay': v});
+                                              
+                                          if (context.mounted) {
+                                            setState(() {});
+                                          }
                                         },
                                         expectedHolidayRiskAmount: expectedRisk,
+                                        minWage: ((storeData?['minimumHourlyWage'] as num?)?.toDouble() ?? 0) > 0
+                                            ? (storeData?['minimumHourlyWage'] as num?)!.toDouble() 
+                                            : PayrollConstants.legalMinimumWage,
                                       );
                                     },
                                   ),
@@ -395,6 +493,14 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                                           staffSummaries: staffSummaries,
                                           periodStart: period.start,
                                           periodEnd: period.end,
+                                          isFiveOrMore: standing.isFiveOrMore || isFiveOrMoreByStore,
+                                          isFiveOrMoreSource: isFiveOrMoreByStore ? 'manual_store' : 'auto',
+                                          daysWithFiveOrMore: standing.daysWithFiveOrMore,
+                                          operatingDays: standing.operatingDays,
+                                          averageWorkers: standing.average,
+                                          fiveOrMoreDecisionReason: standing.isFiveOrMore
+                                              ? '자동 산정: 평균 ${standing.average.toStringAsFixed(1)}명, 5인↑ ${standing.daysWithFiveOrMore}/${standing.operatingDays}일'
+                                              : (isFiveOrMoreByStore ? '사장님 수동 설정 (5인 이상)' : '자동 산정: 5인 미만'),
                                         ),
                                         icon: const Icon(Icons.send_to_mobile),
                                         label: const Text(
@@ -631,6 +737,29 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
           const SizedBox(height: 10),
           Text('평균(연인원/기간일): ${standing.average.toStringAsFixed(2)}명'),
           Text('기간일수: ${standing.totalDays}일 · 5인 이상 출근일: ${standing.daysWithFiveOrMore}일'),
+          if (isFive) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.orange.shade900),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '공공데이터 연동 업데이트 전까지는 달력의 법정공휴일(삼일절, 명절, 대체공휴일 등) 근무 가산수당을 아래의 "기타수당"을 통해 수동으로 합산해 주세요. (단, 1일 8시간 연장근무, 규칙적인 "주휴일" 및 5월 1일 "근로자의 날"은 시스템이 이미 완전 자동으로 정산해 줍니다.)',
+                      style: TextStyle(fontSize: 12, color: Colors.orange.shade900, height: 1.4, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
         ],
       ),
@@ -672,15 +801,23 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     PayrollCalculationResult? summary,
     {required bool manualWeeklyHolidayApproved,
     required ValueChanged<bool> onManualWeeklyHolidayApprovalChanged,
-    double? expectedHolidayRiskAmount}
+    double? expectedHolidayRiskAmount,
+    double minWage = 0}
   ) {
     if (summary == null) return const SizedBox();
     final sumMatches = _salarySumMatches(summary);
     final totalWithoutWeeklyHoliday = summary.totalPay - summary.weeklyHolidayPay;
-    final displayedTotal = manualWeeklyHolidayApproved
-        ? totalWithoutWeeklyHoliday + summary.weeklyHolidayPay
-        : totalWithoutWeeklyHoliday;
-    return Card(
+    return Builder(
+      builder: (context) {
+        bool localApproved = manualWeeklyHolidayApproved;
+        
+        return StatefulBuilder(
+          builder: (context, setStateLocal) {
+        final displayedTotal = localApproved
+            ? totalWithoutWeeklyHoliday + summary.weeklyHolidayPay
+            : totalWithoutWeeklyHoliday;
+            
+        return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -704,7 +841,7 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                   ),
                 ),
                 Text(
-                  '${displayedTotal.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원',
+                  '${displayedTotal.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]},")}원',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blue),
                 ),
               ],
@@ -716,33 +853,135 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text('순수근로 ${summary.pureLaborHours.toStringAsFixed(1)}시간 / 체류 ${summary.stayHours.toStringAsFixed(1)}시간',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                Text(
-                  '기본급: ${summary.basePay.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]},")}원',
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-                Text(
-                  '근로장려수당: ${summary.breakPay.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]},")}원',
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-                Text(
-                  '기타수당: ${summary.otherAllowancePay.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]},")}원',
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-                if (summary.premiumPay > 0)
-                  Text(
-                    '가산 수당(5인 이상): ${summary.premiumPay.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]},")}원'
-                    ' (${summary.premiumHours.toStringAsFixed(1)}h × 0.5배)',
-                    style: const TextStyle(fontSize: 12, color: Colors.indigo),
-                  ),
-                Text(
-                  summary.isWeeklyHolidayEligible
-                      ? (manualWeeklyHolidayApproved
-                          ? '주휴수당(승인 반영): ${summary.weeklyHolidayPay.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]},")}원'
-                          : '주휴수당: 승인 필요(현재 합계 미포함)')
-                      : '주휴수당: 미대상',
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                Builder(
+                  builder: (context) {
+                    String _fH(double h) => PayrollCalculator.formatHoursAsKorean(h);
+                    String _fW(num amt) => amt.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (m) => "${m[1]},");
+                    final hw = staff.hourlyWage;
+
+                    bool hasProbation = staff.isProbation && staff.probationMonths > 0;
+                    double effectiveHrly = hw;
+                    String rateText = '${_fW(hw)}원';
+                    if (hasProbation && summary.pureLaborHours > 0 && summary.basePay < summary.pureLaborHours * hw) {
+                      effectiveHrly = (summary.basePay / summary.pureLaborHours).roundToDouble();
+                      rateText = '${_fW(effectiveHrly)}원 (수습적용)';
+                    }
+                    final wHours = effectiveHrly > 0 ? summary.weeklyHolidayPay / effectiveHrly : 0.0;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text('순수근로 ${_fH(summary.pureLaborHours)} / 체류 ${_fH(summary.stayHours)}',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        ),
+                        if (hasProbation && minWage > 0 && effectiveHrly < minWage)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 8, top: 4),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              border: Border.all(color: Colors.red.shade200),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.warning_amber_rounded, color: Colors.red, size: 16),
+                                SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    '최저임금 미달 경고: 수습 90% 시급이 법정 최저임금을 하회합니다.',
+                                    style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        Builder(builder: (context) {
+                          final expectedBasePay = (summary.pureLaborHours * effectiveHrly).roundToDouble();
+                          final isProratedBase = (summary.basePay - expectedBasePay).abs() > 10;
+                          if (isProratedBase && summary.basePayBreakdownByWage.isNotEmpty) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '기본급: ${_fH(summary.pureLaborHours)}시간 (일자별 변경 시급 적용) = ${_fW(summary.basePay)}원',
+                                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                ),
+                                ...summary.basePayBreakdownByWage.entries.map((e) {
+                                  final rate = e.key;
+                                  final hours = e.value;
+                                  final subAmount = rate * hours;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(left: 8.0, top: 2.0),
+                                    child: Text(
+                                      '↳ ${_fH(hours)}시간 × ${_fW(rate)}원 = ${_fW(subAmount)}원',
+                                      style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+                                    ),
+                                  );
+                                }),
+                              ],
+                            );
+                          }
+                          return Text(
+                            '기본급: ${_fH(summary.pureLaborHours)} × $rateText = ${_fW(summary.basePay)}원',
+                            style: const TextStyle(fontSize: 12, color: Colors.black87),
+                          );
+                        }),
+                        if (summary.breakPay > 0)
+                          Builder(builder: (context) {
+                            final expectedBreakPay = (summary.paidBreakHours * effectiveHrly).roundToDouble();
+                            final isProratedBreak = (summary.breakPay - expectedBreakPay).abs() > 10;
+                            if (isProratedBreak) {
+                              return Text(
+                                '유급휴게수당: ${_fH(summary.paidBreakHours)}시간 (일자별 변경 시급 적용) = ${_fW(summary.breakPay)}원',
+                                style: const TextStyle(fontSize: 12, color: Colors.black87),
+                              );
+                            }
+                            return Text(
+                              '유급휴게수당: ${_fH(summary.paidBreakHours)} × $rateText = ${_fW(summary.breakPay)}원 (휴게로 인정해 준 총시간 명시)',
+                              style: const TextStyle(fontSize: 12, color: Colors.black87),
+                            );
+                          }),
+                        if (summary.otherAllowancePay > 0)
+                          Text(
+                            '기타수당: ${_fW(summary.otherAllowancePay)}원',
+                            style: const TextStyle(fontSize: 12, color: Colors.black87),
+                          ),
+                        if (summary.premiumPay > 0)
+                          Text(
+                            '연장/야간 가산수당: ${_fH(summary.premiumHours)} × ${_fW(effectiveHrly * 0.5)}원 = ${_fW(summary.premiumPay)}원',
+                            style: const TextStyle(fontSize: 12, color: Colors.indigo),
+                          ),
+                        if (summary.holidayPremiumPay > 0)
+                          Text(
+                            '근로자의 날 휴일근로가산: +${_fW(summary.holidayPremiumPay)}원',
+                            style: const TextStyle(fontSize: 12, color: Colors.indigo),
+                          ),
+                        if (summary.laborDayAllowancePay > 0)
+                          Builder(
+                            builder: (context) {
+                              final allowanceHours = effectiveHrly > 0 ? summary.laborDayAllowancePay / effectiveHrly : 0.0;
+                              final calcHours = allowanceHours * 5.0;
+                              return Text(
+                                '근로자의 날 유급휴일수당: (${_fH(calcHours)} / 40시간) × 8시간 × $rateText = +${_fW(summary.laborDayAllowancePay)}원',
+                                style: const TextStyle(fontSize: 12, color: Colors.blueAccent),
+                              );
+                            },
+                          ),
+                        if (summary.isWeeklyHolidayEligible)
+                          Text(
+                            localApproved
+                                ? '주휴수당(승인반영): ${_fH(wHours)} × $rateText = ${_fW(summary.weeklyHolidayPay)}원 (주휴 발생 기준이 되는 시간 명시)'
+                                : '주휴수당: 승인 필요(현재 합계 미포함)',
+                            style: const TextStyle(fontSize: 12, color: Colors.black87),
+                          )
+                        else
+                          const Text('주휴수당: 미대상', style: TextStyle(fontSize: 12, color: Colors.black87)),
+                      ],
+                    );
+                  },
                 ),
                 if (summary.annualLeaveAllowancePay > 0)
                   Text(
@@ -771,7 +1010,7 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: manualWeeklyHolidayApproved
+                      color: localApproved
                           ? Colors.yellow[200]
                           : Colors.yellow[100],
                       borderRadius: BorderRadius.circular(10),
@@ -794,8 +1033,13 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                             Row(
                               children: [
                                 Switch(
-                                  value: manualWeeklyHolidayApproved,
-                                  onChanged: onManualWeeklyHolidayApprovalChanged,
+                                  value: localApproved,
+                                  onChanged: (v) {
+                                    setStateLocal(() {
+                                      localApproved = v;
+                                    });
+                                    onManualWeeklyHolidayApprovalChanged(v);
+                                  },
                                   materialTapTargetSize:
                                       MaterialTapTargetSize.shrinkWrap,
                                 ),
@@ -810,7 +1054,7 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                             ),
                           ],
                         ),
-                        if (manualWeeklyHolidayApproved)
+                        if (localApproved)
                           const Padding(
                             padding: EdgeInsets.only(bottom: 4),
                             child: Text(
@@ -829,14 +1073,16 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                           style: const TextStyle(fontSize: 11, height: 1.35),
                         ),
                         if (summary.weeklyHolidayBlockedByAbsence)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 4),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
                             child: Text(
-                              '결근 발생으로 주휴수당 미대상',
+                              localApproved 
+                                  ? '⚠️ 결근 발생 (주휴수당 공제 가능)' 
+                                  : '⚠️ 결근으로 주휴수당이 공제되었습니다',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.redAccent,
-                                fontWeight: FontWeight.w600,
+                                color: localApproved ? Colors.red.shade600 : Colors.redAccent,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
@@ -854,6 +1100,10 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
           ],
         ),
       ),
+    );
+          },
+        );
+      }
     );
   }
 
@@ -909,6 +1159,8 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     final sum = summary.basePay +
         summary.breakPay +
         summary.premiumPay +
+        summary.holidayPremiumPay +
+        summary.laborDayAllowancePay +
         summary.weeklyHolidayPay +
         summary.otherAllowancePay;
     return (sum - summary.totalPay).abs() < 0.5;
@@ -944,21 +1196,11 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     DateTime at, {
     double? minimumHourlyWage,
   }) {
-    if (!worker.isProbation || worker.probationMonths <= 0) return worker.hourlyWage;
-    final start = DateTime.tryParse(worker.startDate);
-    if (start == null) return worker.hourlyWage;
-    final probationEnd = DateTime(
-      start.year,
-      start.month + worker.probationMonths,
-      start.day,
-    );
-    if (!at.isBefore(probationEnd)) return worker.hourlyWage;
-
-    final probationWage = (worker.hourlyWage * 0.9).floorToDouble();
-    if (minimumHourlyWage != null && minimumHourlyWage > 0) {
-      return probationWage < minimumHourlyWage ? minimumHourlyWage : probationWage;
+    double wage = worker.hourlyWage;
+    if (minimumHourlyWage != null && minimumHourlyWage > 0 && wage < minimumHourlyWage) {
+      return minimumHourlyWage;
     }
-    return probationWage;
+    return wage;
   }
 
   int _safeDayInMonth(int year, int month, int day) {
@@ -1087,6 +1329,7 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
       average: average,
       totalPersonDays: totalPersonDays,
       totalDays: totalDays,
+      operatingDays: operatingDays,
       daysWithFiveOrMore: daysWithFiveOrMore,
       isFiveOrMore: isFiveOrMore,
       fiveOrMoreDecisionReason: reason,
@@ -1200,12 +1443,23 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
       ),
     );
   }
+
+  List<LeavePromotionStatus> _parsePromotionLogs(String json) {
+    if (json.isEmpty) return [];
+    try {
+      final List<dynamic> list = (jsonDecode(json) as List?) ?? [];
+      return list.map((e) => LeavePromotionStatus.fromMap((e as Map).cast<String, dynamic>())).toList();
+    } catch (_) {
+      return [];
+    }
+  }
 }
 
 class StandingResult {
   final double average;
   final int totalPersonDays;
   final int totalDays;
+  final int operatingDays;
   final int daysWithFiveOrMore;
   final bool isFiveOrMore;
   final String fiveOrMoreDecisionReason;
@@ -1214,6 +1468,7 @@ class StandingResult {
     required this.average,
     required this.totalPersonDays,
     required this.totalDays,
+    required this.operatingDays,
     required this.daysWithFiveOrMore,
     required this.isFiveOrMore,
     required this.fiveOrMoreDecisionReason,

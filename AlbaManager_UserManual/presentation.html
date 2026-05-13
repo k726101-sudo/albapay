@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>알바급여정석 워크플로우</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #111827;
+            color: white;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .phone-frame {
+            position: relative;
+            width: 375px;
+            height: 812px;
+            background-color: white;
+            border-radius: 40px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border: 8px solid #374151;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            transition: opacity 0.8s ease-in-out;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .slide.active {
+            opacity: 1;
+            z-index: 10;
+        }
+
+        .app-screenshot {
+            width: 100%;
+            height: auto;
+            flex-grow: 1;
+            object-fit: cover;
+            object-position: top;
+        }
+
+        .caption-bar {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(47, 107, 255, 0.95);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            white-space: nowrap;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            z-index: 20;
+            text-align: center;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(-5px); }
+        }
+
+        /* Next button overlay to pause/play and click through */
+        #next-btn {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 100;
+            cursor: pointer;
+            background: transparent;
+            border: none;
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="phone-frame">
+        <div class="slide active" id="slide-1">
+            <img src="./images/login_screen.png" class="app-screenshot" alt="로그인">
+            <div class="caption-bar">1. 사장님 간편 로그인</div>
+        </div>
+        
+        <div class="slide" id="slide-2">
+            <img src="./images/store_setup_top.png" class="app-screenshot" alt="사업자등록">
+            <div class="caption-bar">2. 사업장 정보 등록</div>
+        </div>
+        
+        <div class="slide" id="slide-3">
+            <img src="./images/add_staff_top.png" class="app-screenshot" alt="직원등록">
+            <div class="caption-bar">3. 신규 직원 등록 (근무조건)</div>
+        </div>
+        
+        <div class="slide" id="slide-4">
+            <img src="./images/screen_5.png" class="app-screenshot" alt="초대코드">
+            <div class="caption-bar">4. 직원에게 초대코드 발송</div>
+        </div>
+        
+        <div class="slide" id="slide-5">
+            <img src="./images/labor_contract.png" class="app-screenshot" alt="노무서류작성">
+            <div class="caption-bar">5. 전자 근로계약서 자동 작성</div>
+        </div>
+        
+        <div class="slide" id="slide-6">
+            <img src="./images/alba_web_doc.png" class="app-screenshot" alt="서류 교부">
+            <div class="caption-bar">6. 직원 확인 및 전자 서명 (교부 완료)</div>
+        </div>
+
+        <button id="next-btn" aria-label="다음 슬라이드"></button>
+    </div>
+
+    <script>
+        const slides = document.querySelectorAll('.slide');
+        let currentSlide = 0;
+
+        function showNextSlide() {
+            slides[currentSlide].classList.remove('active');
+            currentSlide = (currentSlide + 1) % slides.length;
+            slides[currentSlide].classList.add('active');
+        }
+
+        document.getElementById('next-btn').addEventListener('click', () => {
+            showNextSlide();
+        });
+
+        // Auto-play initially just in case
+        // setInterval(showNextSlide, 3000);
+    </script>
+</body>
+</html>

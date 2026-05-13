@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ConsentService {
   ConsentService({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+    : _db = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _db;
 
@@ -21,19 +21,15 @@ class ConsentService {
   }) async {
     final ref = _userDoc(uid);
 
-    await ref.set(
-      {
-        'termsVersion': termsVersion,
-        'privacyVersion': privacyVersion,
-        'termsAcceptedAt': FieldValue.serverTimestamp(),
-        'privacyAcceptedAt': FieldValue.serverTimestamp(),
-        'scrollConfirmed': true,
-        'acceptedPlatform': platform,
-        'acceptedAppVersion': ?appVersion,
-        'acceptedLocale': ?locale,
-      },
-      SetOptions(merge: true),
-    );
+    await ref.set({
+      'termsVersion': termsVersion,
+      'privacyVersion': privacyVersion,
+      'termsAcceptedAt': FieldValue.serverTimestamp(),
+      'privacyAcceptedAt': FieldValue.serverTimestamp(),
+      'scrollConfirmed': true,
+      'acceptedPlatform': platform,
+      'acceptedAppVersion': ?appVersion,
+      'acceptedLocale': ?locale,
+    }, SetOptions(merge: true));
   }
 }
-

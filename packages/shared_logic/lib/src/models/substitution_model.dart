@@ -1,4 +1,3 @@
-
 enum SubstitutionStatus { pending, approved, rejected, cancelled }
 
 class Substitution {
@@ -29,30 +28,30 @@ class Substitution {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'storeId': storeId,
-        'requesterId': requesterId,
-        'proposerId': proposerId,
-        'shiftId': shiftId,
-        'startTime': startTime.toIso8601String(),
-        'endTime': endTime.toIso8601String(),
-        'status': status.name,
-        'isSafe': isSafe,
-        'warnings': warnings,
-        'errors': errors,
-      };
+    'id': id,
+    'storeId': storeId,
+    'requesterId': requesterId,
+    'proposerId': proposerId,
+    'shiftId': shiftId,
+    'startTime': startTime.toIso8601String(),
+    'endTime': endTime.toIso8601String(),
+    'status': status.name,
+    'isSafe': isSafe,
+    'warnings': warnings,
+    'errors': errors,
+  };
 
   factory Substitution.fromJson(Map<String, dynamic> json) => Substitution(
-        id: json['id'],
-        storeId: json['storeId'],
-        requesterId: json['requesterId'],
-        proposerId: json['proposerId'],
-        shiftId: json['shiftId'],
-        startTime: DateTime.parse(json['startTime']),
-        endTime: DateTime.parse(json['endTime']),
-        status: SubstitutionStatus.values.byName(json['status']),
-        isSafe: json['isSafe'] ?? true,
-        warnings: List<String>.from(json['warnings'] ?? []),
-        errors: List<String>.from(json['errors'] ?? []),
-      );
+    id: json['id'],
+    storeId: json['storeId'],
+    requesterId: json['requesterId'],
+    proposerId: json['proposerId'],
+    shiftId: json['shiftId'],
+    startTime: DateTime.parse(json['startTime']),
+    endTime: DateTime.parse(json['endTime']),
+    status: SubstitutionStatus.values.byName(json['status']),
+    isSafe: json['isSafe'] ?? true,
+    warnings: List<String>.from(json['warnings'] ?? []),
+    errors: List<String>.from(json['errors'] ?? []),
+  );
 }

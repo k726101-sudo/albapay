@@ -54,15 +54,16 @@ class EducationRecord {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'storeId': storeId,
-        'staffId': staffId,
-        'educationContentId': educationContentId,
-        'completedAt': completedAt.toIso8601String(),
-        'score': score,
-      };
+    'id': id,
+    'storeId': storeId,
+    'staffId': staffId,
+    'educationContentId': educationContentId,
+    'completedAt': completedAt.toIso8601String(),
+    'score': score,
+  };
 
-  factory EducationRecord.fromJson(Map<String, dynamic> json) => EducationRecord(
+  factory EducationRecord.fromJson(Map<String, dynamic> json) =>
+      EducationRecord(
         id: json['id'],
         storeId: json['storeId'],
         staffId: json['staffId'],

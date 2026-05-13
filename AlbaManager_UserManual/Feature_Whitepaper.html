@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>알바급여정석 - 핵심 기능 및 기술 백서</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0f172a;
+            --secondary: #334155;
+            --accent: #2563eb;
+            --accent-light: #eff6ff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --bg-body: #f8fafc;
+            --border: #e2e8f0;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; }
+        body { background-color: #ffffff; color: var(--text-main); line-height: 1.6; }
+        
+        /* Header */
+        header { background: linear-gradient(135deg, var(--primary) 0%, #1e1b4b 100%); color: white; padding: 4rem 2rem; text-align: center; border-bottom: 4px solid var(--accent); }
+        header h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 1rem; letter-spacing: -0.02em; }
+        header p { font-size: 1.2rem; color: #cbd5e1; max-width: 800px; margin: 0 auto; }
+        
+        .container { max-width: 1100px; margin: 0 auto; padding: 3rem 2rem; }
+        
+        /* Categories */
+        .category { margin-bottom: 4rem; }
+        .category-header { font-size: 1.8rem; font-weight: 700; color: var(--primary); margin-bottom: 2rem; border-bottom: 3px solid var(--border); padding-bottom: 10px; display: flex; align-items: center; gap: 12px; }
+        .category-header i { color: var(--accent); }
+        
+        /* Cards */
+        .grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+        @media (min-width: 768px) { .grid { grid-template-columns: 1fr 1fr; } }
+        
+        .card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 1.8rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); position: relative; overflow: hidden; }
+        .card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background-color: var(--accent); }
+        .card-title { font-size: 1.25rem; font-weight: 700; color: var(--primary); margin-bottom: 1rem; display: flex; align-items: center; gap: 10px; }
+        
+        .feature-box { background: var(--accent-light); padding: 1.2rem; border-radius: 8px; margin-bottom: 1rem; }
+        .feature-box h4 { font-size: 1.05rem; color: var(--accent); margin-bottom: 0.5rem; }
+        .feature-box p { font-size: 0.95rem; color: var(--secondary); margin: 0; }
+        
+        .details-list { list-style: none; }
+        .details-list li { position: relative; padding-left: 1.5rem; margin-bottom: 0.8rem; font-size: 0.95rem; color: var(--text-muted); }
+        .details-list li::before { content: "\f00c"; font-family: "Font Awesome 6 Free"; font-weight: 900; position: absolute; left: 0; top: 2px; color: var(--accent); font-size: 0.9rem; }
+        
+        .badge { background: #fee2e2; color: #b91c1c; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; margin-left: 8px; }
+
+        @media print {
+            body { background: white; }
+            header { background: #f8fafc; color: var(--primary); border-bottom: 3px solid var(--accent); padding: 2.5rem 1rem;}
+            header h1 { color: #000; } header p { color: #333; }
+            .category { margin-bottom: 2.5rem; page-break-inside: avoid; }
+            .card { break-inside: avoid; border: 1px solid #cbd5e1; box-shadow: none; }
+            .card::before { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>알바급여정석 상세 기능 백서 (Technical Features)</h1>
+        <p>복잡하게 얽힌 노동법과 행정 처리를 소프트웨어 기술로 완벽하게 자동화한 솔루션의 작동 흐름 및 상세 스펙 자료입니다.</p>
+    </header>
+
+    <div class="container">
+
+        <!-- 1. 출퇴근 및 데이터 수집 -->
+        <div class="category">
+            <h2 class="category-header"><i class="fas fa-route"></i> 1. 출결 및 스케줄링 흐름 (Time & Attendance)</h2>
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">스마트 출퇴근 플로우 (GPS + 생체인증)</div>
+                    <div class="feature-box">
+                        <h4>작동 흐름 (Workflow)</h4>
+                        <p>① 알바생이 앱 접속 → ② GPS 위치 스캔 (사전 설정된 반경 100m 이내 판별) → ③ 매장 내 확인 시 출퇴근 버튼 활성화 → ④ <b>지문/Face ID 인증(본인 확인)</b> → ⑤ 서버 송신 및 사장님 대시보드 실시간 반영.</p>
+                    </div>
+                    <ul class="details-list">
+                        <li>GPS 반경 이탈 시 출근 시도를 차단하거나, 사유 입력 후 예외 승인 처리 가능</li>
+                        <li>공기계나 타인의 기기를 이용한 대리 출근을 하드웨어 생체인증이 완벽히 방어</li>
+                    </ul>
+                </div>
+                <!-- 누락 방지 추가: 온보딩 방식 흐름 추가 -->
+                <div class="card">
+                    <div class="card-title">초대코드 기반 쾌속 온보딩 (Onboarding)</div>
+                    <div class="feature-box">
+                        <h4>직원 합류 방식</h4>
+                        <p>복잡한 가입 양식이 없습니다. 사장님이 앱에서 알바생의 근무 요일/시급을 세팅하면 부여되는 <b>[6자리 초대코드]</b>를 알바생에게 카톡 배포. 알바생은 앱에서 번호 입력 후 즉시 매장 풀(Pool) 접속.</p>
+                    </div>
+                    <ul class="details-list">
+                        <li>소셜 로그인 핑퐁 없이 전화번호 1회 인증만으로 근로계약 정보와 자동 매칭</li>
+                        <li>이중 계정 생성이나 데이터 꼬임 방지 기능 내장</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 급여 정산 핵심 엔진 -->
+        <div class="category">
+            <h2 class="category-header"><i class="fas fa-calculator"></i> 2. 무결점 급여 계산 엔진 (Payroll Engine)</h2>
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">기본 급여 및 주휴수당 자동 계산</div>
+                    <div class="feature-box">
+                        <h4>주휴수당 산출 로직</h4>
+                        <p>앱에 기록된 주별 실 출근 시간을 스캔하여, <b>"주 15시간 이상(개근)" 여부를 알고리즘이 매주 판별</b>합니다. 15시간 도달 시 자동으로 시급을 환산하여 주휴수당을 기본급에 합산합니다.</p>
+                    </div>
+                    <ul class="details-list">
+                        <li>지각, 조퇴 시간에 따른 실근무 시간 스케일 정밀 반영 (1분 단위 혹은 10분 단위 설정)</li>
+                        <li>가불액 입력 시 최종 계산금에서 자동 차감 기능 포함</li>
+                    </ul>
+                </div>
+                
+                <div class="card">
+                    <div class="card-title">보건증, 4대보험, 세금 등 필수 공제 <span class="badge">기능 보강</span></div>
+                    <div class="feature-box">
+                        <h4>원천징수 자동화</h4>
+                        <p>프리랜서형 <b>소득세(3.3%)</b> 혹은 <b>4대 보험(국민/건강/고용/산재)</b> 공제 요율을 세팅해 두면, 시스템이 매월 세무 기준에 맞춰 근로자 부담분을 총 급여에서 선 공제합니다.</p>
+                    </div>
+                    <ul class="details-list">
+                        <li>F&B 프랜차이즈 필수인 <b>보건증(건강진단결과서)</b> 만료일 알림 기능 탑재</li>
+                        <li>세무사에게 보낼 세금 신고용 엑셀 데이터 추출 지원</li>
+                    </ul>
+                </div>
+                
+                <div class="card">
+                    <div class="card-title" style="grid-column: 1 / -1;">퇴직금 추산 및 적립 로직</div>
+                    <div class="feature-box">
+                        <h4>퇴직금 계산 방식</h4>
+                        <p>근무 기간이 1년에 임박하거나 초과한 직원을 대상(주 15시간 이상 근무자)으로, <b>마지막 3개월 간의 일평균 임금(통상임금 비교)을 산출하여 퇴직금 예상액을 자동으로 시뮬레이션</b>해 줍니다.</p>
+                    </div>
+                    <ul class="details-list">
+                        <li>알바생 퇴사 정산 시점(Exit)에 시스템이 자동으로 퇴직금을 정산하여 최종 정산 보고서에 포함</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 법적 심화: 5인 이상 사업장 -->
+        <div class="category">
+            <h2 class="category-header"><i class="fas fa-users"></i> 3. 법적 상태 감지: 5인 이상 사업장 확장</h2>
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">상시 근로자 5인 판별 로직</div>
+                    <div class="feature-box">
+                        <h4>상시 근로자수 산정 방식</h4>
+                        <p>사장님이 직원의 스케줄을 배정하면, 시스템이 한 달 동안의 가동 일수 대비 '일 평균 출근자 수'를 백그라운드에서 추산합니다. <b>평균 출근자가 5명을 지속 초과하면 앱 내 '5인 이상 모드 활성화 알림'</b>을 보냅니다.</p>
+                    </div>
+                    <ul class="details-list">
+                        <li>사장님이 수동으로 5인 이상 토글(Toggle) 스위치 On/Off 가능</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">가산 수당 및 연차휴가 자동 계산</div>
+                    <div class="feature-box">
+                        <h4>5인 이상 전환 시 활성화되는 로직</h4>
+                        <p>스위치가 켜지는 순간 급여 엔진 로직이 근로기준법 제 56조에 맞게 스위칭됩니다.</p>
+                    </div>
+                    <ul class="details-list">
+                        <li><b>연장근로:</b> 1일 8시간, 주 40시간 초과 시 초과 시간에 대해 1.5배 가산</li>
+                        <li><b>야간근로:</b> 밤 10시 ~ 새벽 6시 사이 근무 시 무조건 1.5배 가산 (중복 시 합산)</li>
+                        <li><b>연차 생성:</b> 1개월 만근 시 자동으로 연차 1일이 생성되며, 앱 내에서 직원 연차 소진율 트래킹</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. 문서 자동화 및 보고서 -->
+        <div class="category">
+            <h2 class="category-header"><i class="fas fa-file-invoice"></i> 4. 노무 서류 교부 및 데이터 추출 기능</h2>
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">각종 노무 서류 자동 생성 및 교부</div>
+                    <div class="feature-box">
+                        <h4>서류 제작 및 전자 교부 방식</h4>
+                        <p>직원 기초 정보 기반으로 <b>[표준 근로계약서], [야간/휴일 동의서], [안전 조치 체크리스트]</b> 등이 PDF 형태로 렌더링 됩니다. 완성된 문서는 알바생의 앱(또는 카카오톡 알림톡)으로 전송되어 <b>본인 스마트폰 전자 서명</b>을 거칩니다.</p>
+                    </div>
+                    <ul class="details-list">
+                        <li>서명 즉시 사장님-알바생 양측의 '클라우드 서류 보관함(Vault)'에 3년간 영구 분산 저장</li>
+                        <li>노동부 점검 시 언제든 휴대폰 화면으로 열람 및 출력 증빙 가능</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">급여 명세서 자동 발행 및 리포트(Excel)</div>
+                    <div class="feature-box">
+                        <h4>명세서 교부 빛 추출 흐름</h4>
+                        <p>급여일이 되면 이번 달 시급, 가산수당, 공제내역(세금)이 전부 적힌 <b>전자 급여 명세서가 자동으로 알림톡으로 교부</b>되어 임금명세서 필수 교부 의무를 100% 충족합니다.</p>
+                    </div>
+                    <ul class="details-list">
+                        <li>대시보드 상에서 '이번 달 급여 리포트' 통계(전월 대비 인건비 증감률 등) 시각화 제공</li>
+                        <li>세무사 제출을 위해 매월 근무 기록표와 급여 대장을 <b>Excel(.xlsx) 포맷으로 버튼 한 번에 추출</b></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <hr style="border: 0; border-bottom: 2px solid #E2E8F0; margin: 3rem 0;">
+        <p style="text-align: center; color: var(--text-muted); font-size: 1.1rem; font-weight: 500;">
+            알바급여정석은 이처럼 복잡한 변수가 혼재하는 파트타이머 운영을,<br> 누구나 직관적으로 처리할 수 있는 "자동화된 아키텍처"로 설계하였습니다.
+        </p>
+
+    </div>
+
+</body>
+</html>
