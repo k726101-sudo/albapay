@@ -3347,7 +3347,7 @@ class _SchedulePageState extends State<SchedulePage> {
         return ValueListenableBuilder<Box<ScheduleOverride>>(
           valueListenable: overrideBox.listenable(),
           builder: (context, overridesBox, nestedChild) {
-            final workers = WorkerService.getAll();
+            final workers = WorkerService.getAll().where((w) => w.workerType != 'dispatch').toList();
             final overrides = overrideBox.toMap();
             final storeId = workers
                 .map((w) => w.storeId)

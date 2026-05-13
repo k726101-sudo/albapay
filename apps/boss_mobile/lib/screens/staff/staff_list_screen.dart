@@ -209,7 +209,16 @@ class _StaffListScreenState extends State<StaffListScreen> {
                                     spacing: 4,
                                     runSpacing: 4,
                                     children: [
-                                      if (worker.wageType == 'monthly') ...[
+                                      if (worker.workerType == 'dispatch') ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF607D8B).withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text('용역비 별도 정산', style: TextStyle(fontSize: 11, color: Color(0xFF607D8B), fontWeight: FontWeight.bold)),
+                                        ),
+                                      ] else if (worker.wageType == 'monthly') ...[
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
@@ -571,7 +580,7 @@ class _StaffListScreenState extends State<StaffListScreen> {
   }
 
   String _workerTypeLabel(String type) {
-    if (type == 'dispatch') return '파견';
+    if (type == 'dispatch') return '파견직';
     if (type == 'foreigner') return '외국인';
     return '';
   }

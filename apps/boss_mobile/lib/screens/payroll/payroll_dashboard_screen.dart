@@ -206,8 +206,7 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
             return ValueListenableBuilder<Box<Worker>>(
               valueListenable: Hive.box<Worker>('workers').listenable(),
               builder: (context, box, _) {
-                final staffList = WorkerService.getAll();
-
+                final staffList = WorkerService.getAll().where((w) => w.workerType != 'dispatch').toList();
                 return StreamBuilder<List<Attendance>>(
                   stream: _attendanceStream ?? const Stream.empty(),
                   builder: (context, attSnapshot) {
@@ -273,6 +272,9 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                     }
 
                     for (final staff in staffList) {
+                      // 파견직은 용역업체 소속이므로 급여 정산 대상에서 제외
+                      if (staff.workerType == 'dispatch') continue;
+
                       final staffAttendance = periodAttendance
                           .where((a) => a.staffId == staff.id)
                           .toList();

@@ -198,19 +198,22 @@ class AlbaPayrollPage extends StatelessWidget {
               promotionLogs: _parsePromotionLogs(worker['leavePromotionLogsJson']?.toString() ?? ''),
             );
 
+            final isDispatch = worker['workerType']?.toString() == 'dispatch';
             PayrollCalculationResult? result;
-            try {
-              result = PayrollCalculator.calculate(
-                workerData: workerData,
-                shifts: myAtt,
-                periodStart: period.start,
-                periodEnd: period.end,
-                hourlyRate: hourlyWage,
-                isFiveOrMore: isFiveOrMore,
-                allHistoricalAttendances: allAtt.where((a) => a.staffId == workerId).toList(),
-              );
-            } catch (e) {
-              // ignore calculation errors
+            if (!isDispatch) {
+              try {
+                result = PayrollCalculator.calculate(
+                  workerData: workerData,
+                  shifts: myAtt,
+                  periodStart: period.start,
+                  periodEnd: period.end,
+                  hourlyRate: hourlyWage,
+                  isFiveOrMore: isFiveOrMore,
+                  allHistoricalAttendances: allAtt.where((a) => a.staffId == workerId).toList(),
+                );
+              } catch (e) {
+                // ignore calculation errors
+              }
             }
 
             // Calculate cumulative worked hours (순수 근로시간 반영 기준)
@@ -292,9 +295,11 @@ class AlbaPayrollPage extends StatelessWidget {
                                   fontWeight: FontWeight.w600)),
                           const SizedBox(height: 4),
                           Text(
-                            result != null
-                                ? '${_formatWon(result.totalPay)}원'
-                                : '계산 중...',
+                            isDispatch 
+                                ? '용역업체 정산'
+                                : (result != null
+                                    ? '${_formatWon(result!.totalPay)}원'
+                                    : '계산 중...'),
                             style: const TextStyle(
                               fontSize: 36,
                               fontWeight: FontWeight.w900,

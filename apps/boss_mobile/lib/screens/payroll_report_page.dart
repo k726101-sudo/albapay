@@ -135,6 +135,7 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                 final period = _computeSettlementPeriod(baseDate, settlementStartDay, settlementEndDay);
 
                 final staffList = Hive.box<Worker>('workers').values.where((w) {
+                  if (w.workerType == 'dispatch') return false;
                   if (w.status == 'active') return true;
                   if (w.status == 'inactive' && w.endDate != null && w.endDate!.isNotEmpty) {
                     final exitDate = DateTime.tryParse(w.endDate!);

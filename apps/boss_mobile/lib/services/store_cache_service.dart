@@ -102,6 +102,16 @@ class StoreCacheService {
         duruNuriMonths:
             _asInt(d['duruNuriMonths'], prev?.duruNuriMonths ?? 36),
         isRegistered: true,
+        attendanceGracePeriodMinutes:
+            _asInt(d['attendanceGracePeriodMinutes'], prev?.attendanceGracePeriodMinutes ?? 5),
+        isFiveOrMore: d['isFiveOrMore'] is bool
+            ? d['isFiveOrMore'] as bool
+            : (prev?.isFiveOrMore ?? false),
+        isFiveOrMoreCalculatedValue: d['isFiveOrMore_CalculatedValue'] is bool
+            ? d['isFiveOrMore_CalculatedValue'] as bool
+            : (prev?.isFiveOrMoreCalculatedValue ?? false),
+        isFiveOrMoreChangeReason: _pickString(d, 'isFiveOrMore_ChangeReason', prev?.isFiveOrMoreChangeReason),
+        branchCode: _pickString(d, 'branchCode', prev?.branchCode),
       );
 
       await box.put('current', merged);

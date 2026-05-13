@@ -472,13 +472,12 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
     }
   }
 
-  /// 시급 입력 시 최저시급 실시간 검증
   void _validateWage(String value) {
     final wage = int.tryParse(value.trim()) ?? 0;
     setState(() {
       if (value.trim().isEmpty) {
         _wageError = null;
-      } else if (wage > 0 && wage < _minimumHourlyWage) {
+      } else if (!_isDispatch && wage > 0 && wage < _minimumHourlyWage) {
         _wageError =
             '⚠️ ${_formatMoney(_minimumHourlyWage)}원 이상 입력해 주세요\n(${DateTime.now().year}년 최저시급)';
       } else {
@@ -6050,9 +6049,9 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            '급여 형태 *',
-            style: TextStyle(
+          Text(
+            _isDispatch ? '용역비 형태 (앱 계산용 아님) *' : '급여 형태 *',
+            style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
               color: Color(0xFF333333),
@@ -6089,9 +6088,9 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
               ),
               child: Row(
                 children: [
-                  const Text(
-                    '기본급',
-                    style: TextStyle(
+                  Text(
+                    _isDispatch ? '월 용역비' : '기본급',
+                    style: const TextStyle(
                       fontSize: 13,
                       color: Color(0xFF888888),
                       fontWeight: FontWeight.w600,
@@ -6137,7 +6136,7 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
                 if (enteredBase <= 0 || sR <= 0) return const SizedBox.shrink();
                 final rate = enteredBase / sR;
                 final minBase = (sR * _minimumHourlyWage).ceil();
-                if (rate < _minimumHourlyWage) {
+                if (!_isDispatch && rate < _minimumHourlyWage) {
                   return Container(
                     margin: const EdgeInsets.only(top: 8),
                     padding: const EdgeInsets.all(10),
@@ -6171,9 +6170,9 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
               ),
               child: Row(
                 children: [
-                  const Text(
-                    '시급',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
+                  Text(
+                    _isDispatch ? '시간당 용역비' : '시급',
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF888888)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
