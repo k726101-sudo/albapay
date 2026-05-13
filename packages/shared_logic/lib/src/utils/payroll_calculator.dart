@@ -36,15 +36,22 @@ class PayrollCalculator {
   }
 
   static double _getHourlyWageForDate(
-      String wageHistoryJson, double defaultHourlyWage, DateTime targetDate) {
+    String wageHistoryJson,
+    double defaultHourlyWage,
+    DateTime targetDate,
+  ) {
     if (wageHistoryJson.isEmpty) return defaultHourlyWage;
     try {
       final List<dynamic> history = jsonDecode(wageHistoryJson);
       if (history.isEmpty) return defaultHourlyWage;
-      
+
       history.sort((a, b) {
-        final dateA = DateTime.tryParse(a['effectiveDate']?.toString() ?? '') ?? DateTime(2000);
-        final dateB = DateTime.tryParse(b['effectiveDate']?.toString() ?? '') ?? DateTime(2000);
+        final dateA =
+            DateTime.tryParse(a['effectiveDate']?.toString() ?? '') ??
+            DateTime(2000);
+        final dateB =
+            DateTime.tryParse(b['effectiveDate']?.toString() ?? '') ??
+            DateTime(2000);
         return dateB.compareTo(dateA);
       });
 
@@ -54,16 +61,26 @@ class PayrollCalculator {
         final effectiveDate = DateTime.tryParse(effectiveDateStr);
         if (effectiveDate == null) continue;
 
-        final eDateOnly = DateTime(effectiveDate.year, effectiveDate.month, effectiveDate.day);
-        final tDateOnly = DateTime(targetDate.year, targetDate.month, targetDate.day);
+        final eDateOnly = DateTime(
+          effectiveDate.year,
+          effectiveDate.month,
+          effectiveDate.day,
+        );
+        final tDateOnly = DateTime(
+          targetDate.year,
+          targetDate.month,
+          targetDate.day,
+        );
 
         if (tDateOnly.compareTo(eDateOnly) >= 0) {
-          return (record['hourlyWage'] as num?)?.toDouble() ?? defaultHourlyWage;
+          return (record['hourlyWage'] as num?)?.toDouble() ??
+              defaultHourlyWage;
         }
       }
-      
+
       // If the target date is before all records in history, return the oldest known wage (the last element in the sorted list).
-      return (history.last['hourlyWage'] as num?)?.toDouble() ?? defaultHourlyWage;
+      return (history.last['hourlyWage'] as num?)?.toDouble() ??
+          defaultHourlyWage;
     } catch (_) {}
     return defaultHourlyWage;
   }
@@ -82,7 +99,9 @@ class PayrollCalculator {
     if (workerData.wageHistoryJson.isNotEmpty) {
       print('[PayrollCalc] wageHistoryJson 활성: ${workerData.wageHistoryJson}');
     } else {
-      print('[PayrollCalc] ⚠️ wageHistoryJson 비어있음! hourlyRate=$hourlyRate 로 전체 기간 적용');
+      print(
+        '[PayrollCalc] ⚠️ wageHistoryJson 비어있음! hourlyRate=$hourlyRate 로 전체 기간 적용',
+      );
     }
 
     final breakPerShift = workerData.breakMinutesPerShift;
@@ -154,12 +173,16 @@ class PayrollCalculator {
         if (att.isAttendanceEquivalent &&
             att.attendanceStatus.toLowerCase() == 'annual_leave') {
           double leaveRate = _getHourlyWageForDate(
-            workerData.wageHistoryJson, hourlyRate, att.clockIn);
+            workerData.wageHistoryJson,
+            hourlyRate,
+            att.clockIn,
+          );
           if (att.clockIn.year >= PayrollConstants.minimumWageEffectiveYear &&
               leaveRate < PayrollConstants.legalMinimumWage) {
             leaveRate = PayrollConstants.legalMinimumWage;
           }
-          if (probationEndDate != null && att.clockIn.isBefore(probationEndDate)) {
+          if (probationEndDate != null &&
+              att.clockIn.isBefore(probationEndDate)) {
             leaveRate = (leaveRate * 0.9).floorToDouble();
           }
           final contractWorkDaysPerWeek = workerData.scheduledWorkDays.isEmpty
@@ -190,7 +213,11 @@ class PayrollCalculator {
       if (paidBreak) totalPaidBreakMinutes += appliedBreak;
 
       // 기본 시급 (소급 적용 1차 평가)
-      double baseRate = _getHourlyWageForDate(workerData.wageHistoryJson, hourlyRate, att.clockIn);
+      double baseRate = _getHourlyWageForDate(
+        workerData.wageHistoryJson,
+        hourlyRate,
+        att.clockIn,
+      );
       if (att.clockIn.year >= PayrollConstants.minimumWageEffectiveYear &&
           baseRate < PayrollConstants.legalMinimumWage) {
         baseRate = PayrollConstants.legalMinimumWage;
@@ -203,7 +230,8 @@ class PayrollCalculator {
       }
 
       basePay += (pureMinutes / 60.0) * shiftRate;
-      wageBreakdown[shiftRate] = (wageBreakdown[shiftRate] ?? 0.0) + (pureMinutes / 60.0);
+      wageBreakdown[shiftRate] =
+          (wageBreakdown[shiftRate] ?? 0.0) + (pureMinutes / 60.0);
 
       if (paidBreak) {
         breakPay += (appliedBreak / 60.0) * shiftRate;
@@ -454,8 +482,8 @@ class PayrollCalculator {
     final effectiveWeeklyHours = workerData.weeklyHoursPure > 0
         ? workerData.weeklyHoursPure
         : (workerData.wageType == 'monthly'
-            ? 40.0
-            : workerData.weeklyTotalStayMinutes / 60.0);
+              ? 40.0
+              : workerData.weeklyTotalStayMinutes / 60.0);
 
     final needsBreakSeparationGuide =
         (effectiveWeeklyHours < 15) &&
@@ -482,7 +510,8 @@ class PayrollCalculator {
       isVirtual: workerData.isVirtual,
     );
     // ★ 연차수당 = 퇴사 정산분(미사용 잔여) + 재직 중 사용분(유급휴가 임금)
-    final annualLeaveAllowancePay = leaveSummary.annualLeaveAllowancePay + annualLeaveUsedPay;
+    final annualLeaveAllowancePay =
+        leaveSummary.annualLeaveAllowancePay + annualLeaveUsedPay;
     final hourlyBasedTotalPay = totalPay + annualLeaveAllowancePay;
 
     // ──────────────────────────────────────────────
@@ -657,7 +686,8 @@ class PayrollCalculator {
       // ★ holidayPremiumPay는 실제 5/1 출근 기록이 있을 때만 L791-799에서 적립됨
       // ★ 월급제: 연차 사용일 임금은 이미 월급에 내포 → annualLeaveUsedPay 제외
       //   퇴사 정산분(미사용 잔여 연차)만 추가 지급
-      final monthlyAnnualLeavePay = annualLeaveAllowancePay - annualLeaveUsedPay;
+      final monthlyAnnualLeavePay =
+          annualLeaveAllowancePay - annualLeaveUsedPay;
       finalTotalPay =
           proRataBase +
           proRataFixedOT +
@@ -1019,7 +1049,7 @@ class PayrollCalculator {
     if (operatingDays == 0) return false;
 
     final avg = totalPersonDays / operatingDays;
-    
+
     // 근로기준법 시행령 제7조의2 (상시 사용하는 근로자 수의 산정 방법) 예외 조항 적용
     if (avg < 5.0) {
       // 평균 5명 미만이더라도 5명 이상인 일수가 가동일수의 1/2 이상이면 5인 이상 사업장으로 본다
@@ -1127,6 +1157,11 @@ class PayrollCalculator {
     String annualLeaveInitialAdjustmentReason = '',
     List<LeavePromotionStatus> promotionLogs = const [],
     bool isVirtual = false,
+    String wageType = 'hourly',
+    double monthlyWage = 0.0,
+    double mealAllowance = 0.0,
+    double fixedOvertimePay = 0.0,
+    List<double> otherAllowances = const [],
   }) => SeveranceCalculator.calculateExitSettlement(
     workerName: workerName,
     startDate: startDate,
@@ -1143,6 +1178,11 @@ class PayrollCalculator {
     annualLeaveInitialAdjustmentReason: annualLeaveInitialAdjustmentReason,
     promotionLogs: promotionLogs,
     isVirtual: isVirtual,
+    wageType: wageType,
+    monthlyWage: monthlyWage,
+    mealAllowance: mealAllowance,
+    fixedOvertimePay: fixedOvertimePay,
+    otherAllowances: otherAllowances,
   );
 
   static ShiftSwapResult processShiftSwap({
@@ -1336,9 +1376,13 @@ class PayrollCalculator {
   }) {
     final now = AppClock.now();
     final today = DateTime(now.year, now.month, now.day);
-    final joinOnly = joinDate != null ? DateTime(joinDate.year, joinDate.month, joinDate.day) : null;
-    final endOnly = endDate != null ? DateTime(endDate.year, endDate.month, endDate.day) : null;
-    
+    final joinOnly = joinDate != null
+        ? DateTime(joinDate.year, joinDate.month, joinDate.day)
+        : null;
+    final endOnly = endDate != null
+        ? DateTime(endDate.year, endDate.month, endDate.day)
+        : null;
+
     DateTime? firstAttendanceDate;
     for (final a in attendances) {
       final d = DateTime(a.clockIn.year, a.clockIn.month, a.clockIn.day);
@@ -1346,7 +1390,7 @@ class PayrollCalculator {
         firstAttendanceDate = d;
       }
     }
-    
+
     final expectedDays = <String>{};
     for (
       var d = rangeStart;
@@ -1356,19 +1400,20 @@ class PayrollCalculator {
       // 오늘 이후(미래) 날짜는 아직 출근 기록이 없는 게 당연하므로 결근 판정에서 제외.
       // 오늘도 제외: 아직 근무 중(clockOut=null)이면 결근으로 오판하기 때문.
       if (!d.isBefore(today)) continue;
-      
+
       // 앱 도입 이전(첫 출퇴근 기록 이전)의 날짜는 결근 판정에서 제외 (앱 사용 초기 불이익 방지)
       final dOnly = DateTime(d.year, d.month, d.day);
-      if (firstAttendanceDate != null && dOnly.isBefore(firstAttendanceDate)) continue;
-      
+      if (firstAttendanceDate != null && dOnly.isBefore(firstAttendanceDate))
+        continue;
+
       // 입사일 이전이거나 퇴사일 이후인 날짜는 근무 의무가 없으므로 제외
       if (joinOnly != null && dOnly.isBefore(joinOnly)) continue;
       if (endOnly != null && dOnly.isAfter(endOnly)) continue;
-      
+
       // 근로기준법상 근로자의 날(5월 1일)은 모든 사업장 적용 법정 유급휴일이므로
       // 출근 기록이 없더라도 결근(무단 결근)으로 처리하지 않음 (만근 산정 시 출근으로 간주)
       if (d.month == 5 && d.day == 1) continue;
-      
+
       final code = d.weekday == DateTime.sunday ? 0 : d.weekday;
       if (!scheduledWorkDays.contains(code)) continue;
       expectedDays.add('${d.year}-${d.month}-${d.day}');
