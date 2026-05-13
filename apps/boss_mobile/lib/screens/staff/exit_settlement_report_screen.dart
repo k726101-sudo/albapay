@@ -220,11 +220,14 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('총 정산 합계액', style: pw.TextStyle(font: font, fontSize: 20)),
+                    pw.Text('총 정산 합계액 (세전)', style: pw.TextStyle(font: font, fontSize: 20)),
                     pw.Text('${NumberFormat('#,###').format(_result.totalSettlementAmount)} 원', style: pw.TextStyle(font: font, fontSize: 22)),
                   ],
                 ),
-                pw.SizedBox(height: 60),
+                pw.SizedBox(height: 12),
+                pw.Text('※ 위 금액은 세전(稅前) 금액이며, 실제 수령액은 퇴직소득세(원천징수) 차감 후 달라질 수 있습니다.',
+                  style: pw.TextStyle(font: normalFont, fontSize: 10, color: PdfColors.grey600)),
+                pw.SizedBox(height: 40),
                 pw.Text('위 금액을 퇴사 정산금으로 확인하며, 퇴사 후 14일 이내인 ${DateFormat('yyyy년 MM월 dd일').format(_result.paymentDeadline)}까지 지급할 것을 확약합니다.', 
                   style: pw.TextStyle(font: normalFont, fontSize: 12, color: PdfColors.grey700)),
                 pw.SizedBox(height: 40),
@@ -355,12 +358,17 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('총 지급액', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const Text('총 지급액 (세전)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             Text(
               '${NumberFormat('#,###').format(_result.totalSettlementAmount)}원',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Color(0xFF1a6ebd)),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '※ 위 금액은 세전 금액이며, 실제 수령액은 퇴직소득세(원천징수) 차감 후 달라질 수 있습니다.',
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
         ),
         if (_result.calculationBasis.isNotEmpty) ...[
           const SizedBox(height: 24),

@@ -284,6 +284,8 @@ class SeveranceCalculator {
     }
 
     basis.add('');
+    basis.add('※ 위 금액은 세전(稅前) 금액입니다.');
+    basis.add('※ 실제 수령액은 퇴직소득세(원천징수) 차감 후 달라질 수 있습니다.');
     basis.add('※ 실제 퇴직금은 출근기록·지급내역·근로계약에 따라 달라질 수 있습니다.');
 
     return ExitSettlementResult(
