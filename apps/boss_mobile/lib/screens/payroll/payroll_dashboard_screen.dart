@@ -32,29 +32,31 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final box = Hive.box('user_settings');
-    final storeId = box.get('currentStoreId');
-    if (storeId != null && storeId != _lastStoreId) {
-      _lastStoreId = storeId;
-      _storeStream = FirebaseFirestore.instance.collection('stores').doc(storeId).snapshots();
-      _attendanceStream = DatabaseService().streamAttendance(storeId);
-    }
+    // storeId is handled inside build() via StoreIdGate
   }
 
-  DateTime _getBaseDate(DateTime now, int offset) {
-    int y = now.year;
-    int m = now.month + offset;
-    int d = now.day;
-    while (m <= 0) {
-      m += 12;
-      y -= 1;
+  DateTime _getEffectiveBaseDate(DateTime now, int offset, int payday, int endDay) {
+    int baseShift = (now.day >= payday) ? 1 : 0;
+    int targetMonth = now.month + baseShift + offset;
+    
+    DateTime targetPaydayDate = DateTime(now.year, targetMonth, payday);
+    
+    DateTime candidateEnd = DateTime(
+      targetPaydayDate.year,
+      targetPaydayDate.month,
+      _safeDayInMonth(targetPaydayDate.year, targetPaydayDate.month, endDay)
+    );
+    
+    if (candidateEnd.isAfter(targetPaydayDate)) {
+      final prevMonth = DateTime(targetPaydayDate.year, targetPaydayDate.month - 1, 1);
+      candidateEnd = DateTime(
+        prevMonth.year,
+        prevMonth.month,
+        _safeDayInMonth(prevMonth.year, prevMonth.month, endDay)
+      );
     }
-    while (m > 12) {
-      m -= 12;
-      y += 1;
-    }
-    int maxDays = DateTime(y, m + 1, 0).day;
-    return DateTime(y, m, d > maxDays ? maxDays : d);
+    
+    return candidateEnd;
   }
 
   Future<void> _finalizeAndSendPayslips({
@@ -178,6 +180,12 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
   Widget build(BuildContext context) {
     return StoreIdGate(
       builder: (context, storeId) {
+        if (storeId != _lastStoreId) {
+          _lastStoreId = storeId;
+          _storeStream = FirebaseFirestore.instance.collection('stores').doc(storeId).snapshots();
+          _attendanceStream = DatabaseService().streamAttendance(storeId);
+        }
+        
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _storeStream ?? const Stream.empty(),
           builder: (context, storeSnapshot) {
@@ -213,14 +221,11 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                     final now = AppClock.now();
                     
                     if (!_isInitialized) {
-                      final payday = (storeData?['payday'] as num?)?.toInt() ?? 1;
-                      if (now.day < payday) {
-                        _monthOffset = -1;
-                      }
                       _isInitialized = true;
                     }
                     
-                    final baseDate = _getBaseDate(now, _monthOffset);
+                    final payday = (storeData?['payday'] as num?)?.toInt() ?? 1;
+                    final baseDate = _getEffectiveBaseDate(now, _monthOffset, payday, settlementEndDay);
                     final period = _computeSettlementPeriod(
                       baseDate,
                       settlementStartDay,
@@ -252,8 +257,20 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                     final staffRiskExpectedHoliday = <String, double>{};
                     int weeklyHolidayExceptionTotal = 0;
                     int breakSeparationRiskCount = 0;
-                    final isFiveOrMoreByStore =
-                        (storeData?['isFiveOrMore'] as bool?) ?? false;
+                    final sizeMode = storeData?['employeeSizeMode']?.toString() ?? 'auto';
+                    final customReason = storeData?['employeeSizeChangeReason']?.toString() ?? '';
+                    bool effectiveIsFiveOrMore;
+                    String effectiveSource;
+                    if (sizeMode == 'manual_5plus') {
+                      effectiveIsFiveOrMore = true;
+                      effectiveSource = 'manual_store';
+                    } else if (sizeMode == 'manual_under5') {
+                      effectiveIsFiveOrMore = false;
+                      effectiveSource = 'manual_store';
+                    } else {
+                      effectiveIsFiveOrMore = standing.isFiveOrMore;
+                      effectiveSource = 'auto';
+                    }
 
                     for (final staff in staffList) {
                       final staffAttendance = periodAttendance
@@ -338,7 +355,7 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                         periodStart: period.start,
                         periodEnd: localPeriodEnd,
                         hourlyRate: effectiveWage,
-                        isFiveOrMore: standing.isFiveOrMore || isFiveOrMoreByStore,
+                        isFiveOrMore: effectiveIsFiveOrMore,
                         allHistoricalAttendances: staffAllHistory,
                       );
 
@@ -493,14 +510,18 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                                           staffSummaries: staffSummaries,
                                           periodStart: period.start,
                                           periodEnd: period.end,
-                                          isFiveOrMore: standing.isFiveOrMore || isFiveOrMoreByStore,
-                                          isFiveOrMoreSource: isFiveOrMoreByStore ? 'manual_store' : 'auto',
+                                          isFiveOrMore: effectiveIsFiveOrMore,
+                                          isFiveOrMoreSource: effectiveSource,
                                           daysWithFiveOrMore: standing.daysWithFiveOrMore,
                                           operatingDays: standing.operatingDays,
                                           averageWorkers: standing.average,
-                                          fiveOrMoreDecisionReason: standing.isFiveOrMore
-                                              ? '자동 산정: 평균 ${standing.average.toStringAsFixed(1)}명, 5인↑ ${standing.daysWithFiveOrMore}/${standing.operatingDays}일'
-                                              : (isFiveOrMoreByStore ? '사장님 수동 설정 (5인 이상)' : '자동 추정: 5인 미만'),
+                                          fiveOrMoreDecisionReason: sizeMode == 'manual_5plus'
+                                              ? '사장님 수동 설정 (5인 이상 고정)' + (customReason.isNotEmpty ? ' - 사유: $customReason' : '')
+                                              : sizeMode == 'manual_under5'
+                                                  ? '사장님 수동 설정 (5인 미만 고정)' + (customReason.isNotEmpty ? ' - 사유: $customReason' : '')
+                                                  : (effectiveIsFiveOrMore
+                                                      ? '자동 산정: 평균 ${standing.average.toStringAsFixed(1)}명, 5인↑ ${standing.daysWithFiveOrMore}/${standing.operatingDays}일'
+                                                      : '자동 추정: 5인 미만'),
                                         ),
                                         icon: const Icon(Icons.send_to_mobile),
                                         label: const Text(
@@ -609,6 +630,20 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     required DateTime periodStart,
     required DateTime periodEnd,
   }) async {
+    final storeSnap = await FirebaseFirestore.instance.collection('stores').doc(storeId).get();
+    final sizeMode = storeSnap.data()?['employeeSizeMode']?.toString() ?? 'auto';
+
+    if (sizeMode != 'auto') {
+      if (!context.mounted) return;
+      final modeText = sizeMode == 'manual_5plus' ? '5인 이상' : '5인 미만';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('[$modeText 고정] 수동 설정 사용 중이므로 자동 갱신되지 않습니다.'),
+        ),
+      );
+      return;
+    }
+
     final Map<String, List<int>> virtualStaffSchedules = {};
     for (final s in WorkerService.getAll()) {
       if (s.name.contains('가상')) {
@@ -833,10 +868,23 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(staff.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text(
-                        '시급: ${staff.hourlyWage.toStringAsFixed(0)}원',
-                        style: const TextStyle(color: Colors.black54, fontSize: 13),
-                      ),
+                      if (staff.wageType == 'monthly')
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            '월급제',
+                            style: TextStyle(color: Colors.blue, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        )
+                      else
+                        Text(
+                          '시급: ${staff.hourlyWage.toStringAsFixed(0)}원',
+                          style: const TextStyle(color: Colors.black54, fontSize: 13),
+                        ),
                     ],
                   ),
                 ),

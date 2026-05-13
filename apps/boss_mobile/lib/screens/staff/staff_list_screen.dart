@@ -210,7 +210,14 @@ class _StaffListScreenState extends State<StaffListScreen> {
                                     runSpacing: 4,
                                     children: [
                                       if (worker.wageType == 'monthly') ...[
-                                        const Text('월급: ', style: TextStyle(fontSize: 12, color: Color(0xFF888888))),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF1a6ebd).withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text('월급제', style: TextStyle(fontSize: 11, color: Color(0xFF1a6ebd), fontWeight: FontWeight.bold)),
+                                        ),
                                         Text(
                                           '${_fmtWage(worker.monthlyWage)}원',
                                           style: const TextStyle(

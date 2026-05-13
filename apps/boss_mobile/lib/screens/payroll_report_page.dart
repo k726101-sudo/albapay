@@ -25,20 +25,28 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
   int _monthOffset = 0;
   bool _isInitialized = false;
 
-  DateTime _getBaseDate(DateTime now, int offset) {
-    int y = now.year;
-    int m = now.month + offset;
-    int d = now.day;
-    while (m <= 0) {
-      m += 12;
-      y -= 1;
+  DateTime _getEffectiveBaseDate(DateTime now, int offset, int payday, int endDay) {
+    int baseShift = (now.day >= payday) ? 1 : 0;
+    int targetMonth = now.month + baseShift + offset;
+    
+    DateTime targetPaydayDate = DateTime(now.year, targetMonth, payday);
+    
+    DateTime candidateEnd = DateTime(
+      targetPaydayDate.year,
+      targetPaydayDate.month,
+      _safeDayInMonth(targetPaydayDate.year, targetPaydayDate.month, endDay)
+    );
+    
+    if (candidateEnd.isAfter(targetPaydayDate)) {
+      final prevMonth = DateTime(targetPaydayDate.year, targetPaydayDate.month - 1, 1);
+      candidateEnd = DateTime(
+        prevMonth.year,
+        prevMonth.month,
+        _safeDayInMonth(prevMonth.year, prevMonth.month, endDay)
+      );
     }
-    while (m > 12) {
-      m -= 12;
-      y += 1;
-    }
-    int maxDays = DateTime(y, m + 1, 0).day;
-    return DateTime(y, m, d > maxDays ? maxDays : d);
+    
+    return candidateEnd;
   }
 
   Widget _buildPeriodNavigator(({DateTime start, DateTime end}) period) {
@@ -119,14 +127,11 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                 final settlementEndDay = (storeData?['settlementEndDay'] as num?)?.toInt() ?? 31;
                 
                 if (!_isInitialized) {
-                  final payday = (storeData?['payday'] as num?)?.toInt() ?? 1;
-                  if (now.day < payday) {
-                    _monthOffset = -1;
-                  }
                   _isInitialized = true;
                 }
                 
-                final baseDate = _getBaseDate(now, _monthOffset);
+                final payday = (storeData?['payday'] as num?)?.toInt() ?? 1;
+                final baseDate = _getEffectiveBaseDate(now, _monthOffset, payday, settlementEndDay);
                 final period = _computeSettlementPeriod(baseDate, settlementStartDay, settlementEndDay);
 
                 final staffList = Hive.box<Worker>('workers').values.where((w) {
@@ -547,24 +552,37 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                   _detailRow('순수 근로 시간', '${summary.pureLaborHours.toStringAsFixed(1)}시간'),
                   _detailRow(
                     '기본 시급',
-                    '${staff.hourlyWage.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원',
-                    trailing: InkWell(
-                      onTap: () async {
-                        final changed = await showWageEditDialog(context, staff);
-                        if (changed == true && mounted) {
-                          // Trigger UI update
-                          setState(() {});
-                        }
-                      },
-                      child: Container(
-                        margin: const EdgeInsets.only(left: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1a6ebd).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
+                    staff.wageType == 'monthly' ? '' : '${staff.hourlyWage.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원',
+                    trailing: Row(
+                      children: [
+                        if (staff.wageType == 'monthly')
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1a6ebd).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('월급제', style: TextStyle(fontSize: 12, color: Color(0xFF1a6ebd), fontWeight: FontWeight.bold)),
+                          ),
+                        InkWell(
+                          onTap: () async {
+                            final changed = await showWageEditDialog(context, staff);
+                            if (changed == true && mounted) {
+                              // Trigger UI update
+                              setState(() {});
+                            }
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1a6ebd).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('수정', style: TextStyle(fontSize: 11, color: Color(0xFF1a6ebd), fontWeight: FontWeight.bold)),
+                          ),
                         ),
-                        child: const Text('수정', style: TextStyle(fontSize: 11, color: Color(0xFF1a6ebd), fontWeight: FontWeight.bold)),
-                      ),
+                      ],
                     ),
                   ),
                   Builder(

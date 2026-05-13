@@ -400,11 +400,29 @@ class AnnualLeaveCalculator {
       "입사일: ${joinDate.year}-${joinDate.month.toString().padLeft(2, '0')}-${joinDate.day.toString().padLeft(2, '0')} (${isFiveOrMore ? '5인이상' : '5인미만'})",
     ];
     if (!isFiveOrMore) {
-      return const AnnualLeaveSummary(
-        totalGenerated: 0,
-        used: 0,
-        remaining: 0,
-        calculationBasis: ["5인 미만 사업장: 연차 법적 의무 없음"],
+      // 5인 미만 전환 시, 신규 연차 발생은 중단하되
+      // 기존에 이미 사용한 연차로 인해 '마이너스 연차'가 되지 않도록
+      // 최소한 사용한 만큼(usedAnnualLeave)은 발생했던 것으로 보존합니다.
+      // (시스템 내 과거 5인 이상/미만 변동 이력이 없기 때문)
+      double guaranteed = usedAnnualLeave;
+      
+      // 승급 로그(촉진 기록)에 보존된 미사용 연차 합산 (과거 확정분 보존)
+      for (final log in promotionLogs) {
+        guaranteed += log.unusedDays;
+      }
+
+      // 여기에 사장님이 수동으로 더해준/초기화해준 값은 그대로 보존
+      guaranteed += manualAdjustment;
+      guaranteed += initialAdjustment;
+
+      return AnnualLeaveSummary(
+        totalGenerated: guaranteed,
+        used: usedAnnualLeave,
+        remaining: guaranteed - usedAnnualLeave,
+        calculationBasis: [
+          "5인 미만 사업장 (설정/추정): 신규 연차 발생 대상 아님",
+          "노무 참고용: 과거 사용 연차 및 수동 조정분은 이력 보존"
+        ],
       );
     }
 
