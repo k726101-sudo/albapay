@@ -29,6 +29,11 @@ class SeveranceCalculator {
     String annualLeaveInitialAdjustmentReason = '',
     List<LeavePromotionStatus> promotionLogs = const [],
     bool isVirtual = false,
+    String wageType = 'hourly',
+    double monthlyWage = 0.0,
+    double mealAllowance = 0.0,
+    double fixedOvertimePay = 0.0,
+    List<double> otherAllowances = const [],
   }) {
     final joinDate = DateTime.parse(startDate);
     final totalWorkingDays = exitDate.difference(joinDate).inDays + 1;
@@ -94,12 +99,7 @@ class SeveranceCalculator {
       }
 
       if (manualAverageDailyWage == null || manualAverageDailyWage <= 0) {
-        double totalWageLast3Months = 0;
-        final weeklyHoursPureCapped = weeklyHours.clamp(0.0, 40.0);
-        // 단시간 근로자 1일 소정근로시간 (계약 주당시간 / 주당 근무일수)
-        // ⚠️ 통상임금 산정 시 (weeklyHours/40)*8 비례 공식이 아닌,
-        //    실제 계약일일근로시간(actualContractDailyHours)을 사용해야 정확함.
-        //    예: 주 20h / 4일 = 5h/일 (비례 공식 (20/40)*8 = 4h과 상이)
+        final isMonthly = wageType == 'monthly' && monthlyWage > 0;
         final contractWorkDaysPerWeek = scheduledWorkDays.isEmpty
             ? 5.0
             : scheduledWorkDays.length.toDouble();
@@ -107,46 +107,86 @@ class SeveranceCalculator {
             ? 8.0
             : (weeklyHours / contractWorkDaysPerWeek).clamp(0.0, 8.0);
 
-        if (workedDays < 30) {
-          // 기록 부족 시(가상직원 등) 소정근로시간 기반 이론적 3개월 총액 추산
-          final weeklyTotalPaidHours =
-              weeklyHoursPureCapped + hoursMultiplier; // weeklyHours >= 15 보장됨
-          totalWageLast3Months =
-              weeklyTotalPaidHours * (calendarDaysIn3Months / 7.0) * hourlyRate;
+        if (isMonthly) {
+          // 1. 통상임금(일급) 계산: (기본급 + 식대) / 월소정근로시간 * 일소정근로시간
+          final ordinaryMonthlyWage = monthlyWage + mealAllowance;
+          final weeklyHolidayH = weeklyHours >= 15
+              ? (weeklyHours / contractWorkDaysPerWeek)
+              : 0.0;
+          final scheduledH = ((weeklyHours + weeklyHolidayH) * 4.345)
+              .ceilToDouble();
+          final ordinaryHourlyRate = scheduledH > 0
+              ? (ordinaryMonthlyWage / scheduledH)
+              : 0.0;
+          final ordinaryDailyWage = hoursMultiplier * ordinaryHourlyRate;
+
+          // 2. 평균임금(일급) 계산: (월총급여 * 3) / 3개월총일수
+          final totalOtherAllowances = otherAllowances.fold(
+            0.0,
+            (a, b) => a + b,
+          );
+          final grossMonthlyWage =
+              monthlyWage +
+              mealAllowance +
+              fixedOvertimePay +
+              totalOtherAllowances;
+          final totalWageLast3Months = grossMonthlyWage * 3.0;
+
+          double calculatedAverage =
+              totalWageLast3Months / calendarDaysIn3Months.toDouble();
+
+          averageDailyWage = calculatedAverage > ordinaryDailyWage
+              ? calculatedAverage
+              : ordinaryDailyWage;
+
+          // 월급제는 시간급(hourlyRate)을 통상시급으로 덮어씀 (잔여 연차수당 및 일할급여 계산용)
+          hourlyRate = ordinaryHourlyRate;
         } else {
-          // 실제 근무시간 합산
-          for (final att in last3MonthsAttendances) {
-            if (att.clockOut == null) continue;
-            final minutes = att.clockOut!.difference(att.clockIn).inMinutes;
-            totalWageLast3Months += (minutes / 60.0) * hourlyRate;
+          double totalWageLast3Months = 0;
+          final weeklyHoursPureCapped = weeklyHours.clamp(0.0, 40.0);
+
+          if (workedDays < 30) {
+            // 기록 부족 시(가상직원 등) 소정근로시간 기반 이론적 3개월 총액 추산
+            final weeklyTotalPaidHours =
+                weeklyHoursPureCapped +
+                hoursMultiplier; // weeklyHours >= 15 보장됨
+            totalWageLast3Months =
+                weeklyTotalPaidHours *
+                (calendarDaysIn3Months / 7.0) *
+                hourlyRate;
+          } else {
+            // 실제 근무시간 합산
+            for (final att in last3MonthsAttendances) {
+              if (att.clockOut == null) continue;
+              final minutes = att.clockOut!.difference(att.clockIn).inMinutes;
+              totalWageLast3Months += (minutes / 60.0) * hourlyRate;
+            }
+            // 실제 출근 기록에 주휴수당분 직접 가산 (역월 기준)
+            totalWageLast3Months +=
+                hoursMultiplier * hourlyRate * (calendarDaysIn3Months / 7.0);
           }
-          // 실제 출근 기록에 주휴수당분 직접 가산 (역월 기준)
-          totalWageLast3Months +=
-              hoursMultiplier * hourlyRate * (calendarDaysIn3Months / 7.0);
+
+          // 연차수당 가산: 실제 발생일수 기반 (15일 고정 가정 제거)
+          final actualAnnualDays = _estimateAnnualLeaveDays(
+            joinDate: joinDate,
+            exitDate: exitDate,
+            isFiveOrMore: isFiveOrMore,
+          );
+          final annualLeaveAddition =
+              (actualAnnualDays * hoursMultiplier * hourlyRate) *
+              (calendarDaysIn3Months / 365.0);
+          totalWageLast3Months += annualLeaveAddition;
+
+          double calculatedAverage =
+              totalWageLast3Months / calendarDaysIn3Months.toDouble();
+
+          // [근로기준법 제2조 제2항] 평균임금이 통상임금보다 적으면 통상임금액을 평균임금으로 한다.
+          final ordinaryDailyWage = hoursMultiplier * hourlyRate;
+
+          averageDailyWage = calculatedAverage > ordinaryDailyWage
+              ? calculatedAverage
+              : ordinaryDailyWage;
         }
-
-        // 연차수당 가산: 실제 발생일수 기반 (15일 고정 가정 제거)
-        // 5인 미만 → 0일, 1년 미만 → 0~11일, 1년+ → 15~25일
-        final actualAnnualDays = _estimateAnnualLeaveDays(
-          joinDate: joinDate,
-          exitDate: exitDate,
-          isFiveOrMore: isFiveOrMore,
-        );
-        final annualLeaveAddition =
-            (actualAnnualDays * hoursMultiplier * hourlyRate) *
-                (calendarDaysIn3Months / 365.0);
-        totalWageLast3Months += annualLeaveAddition;
-
-        double calculatedAverage =
-            totalWageLast3Months / calendarDaysIn3Months.toDouble();
-
-        // [근로기준법 제2조 제2항] 평균임금이 통상임금보다 적으면 통상임금액을 평균임금으로 한다.
-        // 이중 차감 방지를 위해 1일 통상임금 하한선 적용
-        final ordinaryDailyWage = hoursMultiplier * hourlyRate;
-
-        averageDailyWage = calculatedAverage > ordinaryDailyWage
-            ? calculatedAverage
-            : ordinaryDailyWage;
       }
 
       severancePay = (averageDailyWage * 30) * (totalWorkingDays / 365.0);
@@ -175,10 +215,18 @@ class SeveranceCalculator {
     basis.add('[잔여 연차수당]');
     basis.add(' - 잔여 연차: ${remainingLeave.toStringAsFixed(1)}일');
     if (remainingLeave > 0) {
-      final contractWorkDaysPerWeek = scheduledWorkDays.isEmpty ? 5.0 : scheduledWorkDays.length.toDouble();
-      final hoursMultiplier = weeklyHours >= 40.0 ? 8.0 : (weeklyHours / contractWorkDaysPerWeek).clamp(0.0, 8.0);
-      basis.add(' - 1일 가치: ${hoursMultiplier.toStringAsFixed(1)}시간 (단시간 비례 환산)');
-      basis.add(' - 계산식: 잔여 ${remainingLeave.toStringAsFixed(1)}일 × ${hoursMultiplier.toStringAsFixed(1)}시간 × ${hourlyRate.toInt()}원 = ${annualLeavePayout.toInt()}원');
+      final contractWorkDaysPerWeek = scheduledWorkDays.isEmpty
+          ? 5.0
+          : scheduledWorkDays.length.toDouble();
+      final hoursMultiplier = weeklyHours >= 40.0
+          ? 8.0
+          : (weeklyHours / contractWorkDaysPerWeek).clamp(0.0, 8.0);
+      basis.add(
+        ' - 1일 가치: ${hoursMultiplier.toStringAsFixed(1)}시간 (단시간 비례 환산)',
+      );
+      basis.add(
+        ' - 계산식: 잔여 ${remainingLeave.toStringAsFixed(1)}일 × ${hoursMultiplier.toStringAsFixed(1)}시간 × ${hourlyRate.toInt()}원 = ${annualLeavePayout.toInt()}원',
+      );
     } else {
       basis.add(' - 정산할 연차수당 없음');
     }
@@ -188,7 +236,9 @@ class SeveranceCalculator {
     if (isSeveranceEligible) {
       basis.add(' - 총 재직일수: $totalWorkingDays일');
       basis.add(' - 1일 평균임금: ${averageDailyWage.toInt()}원 (통상임금 하한선 적용 비교)');
-      basis.add(' - 계산식: ${averageDailyWage.toInt()}원 × 30일 × ($totalWorkingDays일 ÷ 365일) = ${severancePay.toInt()}원');
+      basis.add(
+        ' - 계산식: ${averageDailyWage.toInt()}원 × 30일 × ($totalWorkingDays일 ÷ 365일) = ${severancePay.toInt()}원',
+      );
     } else {
       basis.add(' - 대상 아님 (1년 미만 또는 주 15시간 미만 근무)');
     }
@@ -222,8 +272,7 @@ class SeveranceCalculator {
       targetYear -= 1;
     }
     final lastDayOfTarget = DateTime(targetYear, targetMonth + 1, 0).day;
-    final targetDay =
-        from.day > lastDayOfTarget ? lastDayOfTarget : from.day;
+    final targetDay = from.day > lastDayOfTarget ? lastDayOfTarget : from.day;
     return DateTime(targetYear, targetMonth, targetDay);
   }
 

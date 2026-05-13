@@ -102,6 +102,11 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
         annualLeaveInitialAdjustmentReason: widget.worker.annualLeaveInitialAdjustmentReason,
         promotionLogs: _parsePromotionLogs(widget.worker.leavePromotionLogsJson),
         isVirtual: widget.worker.name.contains('가상'),
+        wageType: widget.worker.wageType,
+        monthlyWage: widget.worker.monthlyWage,
+        mealAllowance: widget.worker.allowances.firstWhere((a) => a.label == '식비', orElse: () => Allowance(label: '식비', amount: 0)).amount,
+        fixedOvertimePay: widget.worker.fixedOvertimePay,
+        otherAllowances: widget.worker.allowances.where((a) => a.label != '식비' && a.label != '고정연장수당').map((a) => a.amount).toList(),
       );
       
       setState(() {
