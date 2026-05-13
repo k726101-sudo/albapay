@@ -171,6 +171,28 @@ class SeveranceCalculator {
       exitMonthWage += (minutes / 60.0) * hourlyRate;
     }
 
+    final List<String> basis = [];
+    basis.add('[잔여 연차수당]');
+    basis.add(' - 잔여 연차: ${remainingLeave.toStringAsFixed(1)}일');
+    if (remainingLeave > 0) {
+      final contractWorkDaysPerWeek = scheduledWorkDays.isEmpty ? 5.0 : scheduledWorkDays.length.toDouble();
+      final hoursMultiplier = weeklyHours >= 40.0 ? 8.0 : (weeklyHours / contractWorkDaysPerWeek).clamp(0.0, 8.0);
+      basis.add(' - 1일 가치: ${hoursMultiplier.toStringAsFixed(1)}시간 (단시간 비례 환산)');
+      basis.add(' - 계산식: 잔여 ${remainingLeave.toStringAsFixed(1)}일 × ${hoursMultiplier.toStringAsFixed(1)}시간 × ${hourlyRate.toInt()}원 = ${annualLeavePayout.toInt()}원');
+    } else {
+      basis.add(' - 정산할 연차수당 없음');
+    }
+
+    basis.add('');
+    basis.add('[법정 퇴직금]');
+    if (isSeveranceEligible) {
+      basis.add(' - 총 재직일수: $totalWorkingDays일');
+      basis.add(' - 1일 평균임금: ${averageDailyWage.toInt()}원 (통상임금 하한선 적용 비교)');
+      basis.add(' - 계산식: ${averageDailyWage.toInt()}원 × 30일 × ($totalWorkingDays일 ÷ 365일) = ${severancePay.toInt()}원');
+    } else {
+      basis.add(' - 대상 아님 (1년 미만 또는 주 15시간 미만 근무)');
+    }
+
     return ExitSettlementResult(
       workerName: workerName,
       joinDate: joinDate,
@@ -184,6 +206,7 @@ class SeveranceCalculator {
       averageDailyWage: averageDailyWage,
       paymentDeadline: exitDate.add(const Duration(days: 14)),
       requiresManualInput: requiresManualInput,
+      calculationBasis: basis,
     );
   }
 
@@ -256,6 +279,7 @@ class ExitSettlementResult {
   final double averageDailyWage;
   final DateTime paymentDeadline;
   final bool requiresManualInput;
+  final List<String> calculationBasis;
 
   ExitSettlementResult({
     required this.workerName,
@@ -270,6 +294,7 @@ class ExitSettlementResult {
     required this.averageDailyWage,
     required this.paymentDeadline,
     this.requiresManualInput = false,
+    this.calculationBasis = const [],
   });
 
   double get totalSettlementAmount =>

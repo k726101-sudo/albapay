@@ -350,6 +350,31 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
             ),
           ],
         ),
+        if (_result.calculationBasis.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('계산 근거 보기', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Text(
+                    _result.calculationBasis.join('\n'),
+                    style: const TextStyle(fontSize: 12, color: Colors.black87, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
