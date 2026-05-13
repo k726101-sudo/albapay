@@ -346,6 +346,9 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                         probationMonths: staff.probationMonths,
                         wageHistoryJson: staff.wageHistoryJson,
                         promotionLogs: _parsePromotionLogs(staff.leavePromotionLogsJson),
+                        includeMealInOrdinary: staff.includeMealInOrdinary,
+                        includeAllowanceInOrdinary: staff.includeAllowanceInOrdinary,
+                        includeFixedOtInAverage: staff.includeFixedOtInAverage,
                       );
 
                       final isInactive = staff.status == 'inactive';

@@ -104,9 +104,16 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
         isVirtual: widget.worker.name.contains('가상'),
         wageType: widget.worker.wageType,
         monthlyWage: widget.worker.monthlyWage,
-        mealAllowance: widget.worker.allowances.firstWhere((a) => a.label == '식비', orElse: () => Allowance(label: '식비', amount: 0)).amount,
+        mealAllowance: widget.worker.allowances
+            .where((a) { final l = a.label.replaceAll(' ', ''); return l.contains('식비') || l.contains('식대'); })
+            .fold(0.0, (sum, a) => sum + a.amount),
         fixedOvertimePay: widget.worker.fixedOvertimePay,
-        otherAllowances: widget.worker.allowances.where((a) => a.label != '식비' && a.label != '고정연장수당').map((a) => a.amount).toList(),
+        otherAllowances: widget.worker.allowances
+            .where((a) { final l = a.label.replaceAll(' ', ''); return !l.contains('식비') && !l.contains('식대') && !l.contains('고정연장수당'); })
+            .map((a) => a.amount).toList(),
+        includeMealInOrdinary: widget.worker.includeMealInOrdinary,
+        includeAllowanceInOrdinary: widget.worker.includeAllowanceInOrdinary,
+        includeFixedOtInAverage: widget.worker.includeFixedOtInAverage,
       );
       
       setState(() {

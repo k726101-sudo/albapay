@@ -148,6 +148,11 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
   bool _isMinor = false;
   bool _hideBanner = false;
 
+  // 고급 노무 설정 (퇴직금·연차수당·통상임금 산정)
+  bool _includeMealInOrdinary = true;
+  bool _includeAllowanceInOrdinary = false;
+  bool _includeFixedOtInAverage = false;
+
   void _phoneFormatListener() {
     final text = _phoneController.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (text.length > 11) {
@@ -274,7 +279,8 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
         _fixedOvertimeHoursController.text = worker.fixedOvertimeHours.toStringAsFixed(1);
       }
       for (final allowance in worker.allowances) {
-        if (allowance.label == '식비' || allowance.label == '상여금' || allowance.label == '교통비') continue;
+        final _lbl = allowance.label.replaceAll(' ', '');
+        if (_lbl.contains('식비') || _lbl.contains('식대') || allowance.label == '상여금' || allowance.label == '교통비') continue;
         if (allowance.label == '직책 수당') {
           _wizardApplied = true;
           _wizardPositionController.text = _formatMoney(allowance.amount);
@@ -291,8 +297,10 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
         }
       }
       // 잔여 금액 추정 복원
+      // ※ allowances에 고정연장수당이 이미 포함되므로 fixedOvertimePay 별도 합산 금지 (이중 계산 방지)
       final totalAllowance = worker.allowances.fold<double>(0.0, (s, e) => s + e.amount);
-      final targetTotal = worker.monthlyWage + totalAllowance + worker.fixedOvertimePay;
+      final targetTotal = worker.monthlyWage + totalAllowance + 
+          (worker.allowances.any((a) => a.label == '고정연장수당') ? 0.0 : worker.fixedOvertimePay);
       _targetSalaryController.text = targetTotal > 0 ? targetTotal.toInt().toString() : '';
     } else {
       _wageType = WageType.hourly;
@@ -306,7 +314,7 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
     for (final allowance in worker.allowances) {
       if (allowance.label == '상여금') {
         _bonusController.text = allowance.amount.toInt().toString();
-      } else if (allowance.label == '식비') {
+      } else if (allowance.label == '식비' || allowance.label == '식대') {
         _mealAllowanceController.text = allowance.amount.toInt().toString();
         _wizardMealAllowance = allowance.amount.toInt();
         _mealTaxExempt = worker.mealTaxExempt;
@@ -318,6 +326,11 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
     }
     _hireDate = RobustDateParser.parse(worker.startDate);
     _breakMinutesController.text = worker.breakMinutes.toInt().toString();
+    
+    // 고급 노무 설정 복원
+    _includeMealInOrdinary = worker.includeMealInOrdinary;
+    _includeAllowanceInOrdinary = worker.includeAllowanceInOrdinary;
+    _includeFixedOtInAverage = worker.includeFixedOtInAverage;
     _breakPreset = worker.breakMinutes == 30
         ? _BreakPreset.minutes30
         : worker.breakMinutes == 60
@@ -771,6 +784,9 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
           : 0.0,
       mealTaxExempt: _mealTaxExempt,
       isPaperContract: isPaperContract ?? widget.initialWorker?.isPaperContract ?? false,
+      includeMealInOrdinary: _includeMealInOrdinary,
+      includeAllowanceInOrdinary: _includeAllowanceInOrdinary,
+      includeFixedOtInAverage: _includeFixedOtInAverage,
     );
   }
 
@@ -3493,6 +3509,12 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
             ],
             subtitle: '보건증 관리 설정',
           ),
+          
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: _buildAdvancedLaborSettingsSection(),
+          ),
+
 
           // ── 온보딩: 맨 아래까지 내리면 보이는 계약서 안내 ──
           if (widget.initialWorker == null &&
@@ -6612,6 +6634,64 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
       ],
     ),
   );
+
+  Widget _buildAdvancedLaborSettingsSection() {
+    return ExpansionTile(
+      title: const Text('고급 노무 설정', style: TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: const Text('퇴직금·연차수당·통상임금 산정 기준', style: TextStyle(fontSize: 12, color: Colors.grey)),
+      collapsedBackgroundColor: Colors.grey.shade50,
+      backgroundColor: Colors.grey.shade50,
+      childrenPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: [
+        SwitchListTile(
+          title: const Text('식대 통상임금 포함', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          subtitle: const Text('정기·일률적으로 지급되는 식대를\n통상임금 계산에 포함합니다.', style: TextStyle(fontSize: 13, color: Colors.black54)),
+          value: _includeMealInOrdinary,
+          activeColor: Theme.of(context).primaryColor,
+          onChanged: (val) => setState(() => _includeMealInOrdinary = val),
+        ),
+        const Divider(height: 1),
+        SwitchListTile(
+          title: const Text('고정수당 통상임금 포함', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          subtitle: const Text('직책수당·근속수당 등\n고정 지급 수당을 통상임금에 포함합니다.', style: TextStyle(fontSize: 13, color: Colors.black54)),
+          value: _includeAllowanceInOrdinary,
+          activeColor: Theme.of(context).primaryColor,
+          onChanged: (val) => setState(() => _includeAllowanceInOrdinary = val),
+        ),
+        const Divider(height: 1),
+        SwitchListTile(
+          title: const Text('고정OT 평균임금 포함', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          subtitle: const Text('고정적으로 지급되는 연장근로수당을\n평균임금 계산에 반영합니다.', style: TextStyle(fontSize: 13, color: Colors.black54)),
+          value: _includeFixedOtInAverage,
+          activeColor: Theme.of(context).primaryColor,
+          onChanged: (val) => setState(() => _includeFixedOtInAverage = val),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.amber.shade200),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 20),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '실제 지급 형태에 따라 노동청·법원에서 통상임금 포함 대상으로 판단될 수 있습니다.',
+                  style: TextStyle(fontSize: 13, color: Colors.black87, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
 }
 
 /// 금액 입력 시 자동 콤마 포맷 (예: 2200000 → 2,200,000)

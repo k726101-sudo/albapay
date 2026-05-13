@@ -109,6 +109,15 @@ class PayrollWorkerData {
   /// 수습 개월 수
   final int probationMonths;
 
+  /// 식대를 통상임금에 포함할지 여부 (고급 노무 설정)
+  final bool includeMealInOrdinary;
+
+  /// 기타 고정수당을 통상임금에 포함할지 여부 (고급 노무 설정)
+  final bool includeAllowanceInOrdinary;
+
+  /// 고정연장수당을 평균임금에 포함할지 여부 (고급 노무 설정)
+  final bool includeFixedOtInAverage;
+
   PayrollWorkerData({
     required this.weeklyHoursPure,
     required this.weeklyTotalStayMinutes,
@@ -143,6 +152,9 @@ class PayrollWorkerData {
     this.wageHistoryJson = '',
     this.isProbation = false,
     this.probationMonths = 0,
+    this.includeMealInOrdinary = true,
+    this.includeAllowanceInOrdinary = false,
+    this.includeFixedOtInAverage = false,
   });
 }
 

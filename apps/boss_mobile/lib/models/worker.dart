@@ -70,6 +70,9 @@ class Worker extends HiveObject {
     this.mealTaxExempt = false,
     this.isPaperContract = false,
     this.wageHistoryJson = '',
+    this.includeMealInOrdinary = true,
+    this.includeAllowanceInOrdinary = false,
+    this.includeFixedOtInAverage = false,
   });
 
   @HiveField(0)
@@ -258,6 +261,18 @@ class Worker extends HiveObject {
   @HiveField(62, defaultValue: '')
   String wageHistoryJson;
 
+  /// 고급 노무 설정: 식대 통상임금 포함 여부 (기본: true)
+  @HiveField(63, defaultValue: true)
+  bool includeMealInOrdinary;
+
+  /// 고급 노무 설정: 고정수당 통상임금 포함 여부 (기본: false)
+  @HiveField(64, defaultValue: false)
+  bool includeAllowanceInOrdinary;
+
+  /// 고급 노무 설정: 고정OT 평균임금 포함 여부 (기본: false)
+  @HiveField(65, defaultValue: false)
+  bool includeFixedOtInAverage;
+
   Map<String, dynamic> toMap() => {
         'name': name,
         'phone': phone,
@@ -321,6 +336,9 @@ class Worker extends HiveObject {
         'mealTaxExempt': mealTaxExempt,
         'isPaperContract': isPaperContract,
         'wageHistoryJson': wageHistoryJson,
+        'includeMealInOrdinary': includeMealInOrdinary,
+        'includeAllowanceInOrdinary': includeAllowanceInOrdinary,
+        'includeFixedOtInAverage': includeFixedOtInAverage,
       };
 
   factory Worker.fromMap(String id, Map<String, dynamic> map) => Worker(
@@ -403,6 +421,9 @@ class Worker extends HiveObject {
         mealTaxExempt: map['mealTaxExempt'] as bool? ?? false,
         isPaperContract: map['isPaperContract'] == true,
         wageHistoryJson: map['wageHistoryJson']?.toString() ?? '',
+        includeMealInOrdinary: map['includeMealInOrdinary'] != false,
+        includeAllowanceInOrdinary: map['includeAllowanceInOrdinary'] == true,
+        includeFixedOtInAverage: map['includeFixedOtInAverage'] == true,
       );
 
   Worker copyWith({
@@ -470,6 +491,9 @@ class Worker extends HiveObject {
     bool? mealTaxExempt,
     bool? isPaperContract,
     String? wageHistoryJson,
+    bool? includeMealInOrdinary,
+    bool? includeAllowanceInOrdinary,
+    bool? includeFixedOtInAverage,
   }) =>
       Worker(
         id: id ?? this.id,
@@ -536,6 +560,9 @@ class Worker extends HiveObject {
         mealTaxExempt: mealTaxExempt ?? this.mealTaxExempt,
         isPaperContract: isPaperContract ?? this.isPaperContract,
         wageHistoryJson: wageHistoryJson ?? this.wageHistoryJson,
+        includeMealInOrdinary: includeMealInOrdinary ?? this.includeMealInOrdinary,
+        includeAllowanceInOrdinary: includeAllowanceInOrdinary ?? this.includeAllowanceInOrdinary,
+        includeFixedOtInAverage: includeFixedOtInAverage ?? this.includeFixedOtInAverage,
       );
 }
 

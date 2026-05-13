@@ -34,6 +34,9 @@ class SeveranceCalculator {
     double mealAllowance = 0.0,
     double fixedOvertimePay = 0.0,
     List<double> otherAllowances = const [],
+    bool includeMealInOrdinary = true,
+    bool includeAllowanceInOrdinary = false,
+    bool includeFixedOtInAverage = false,
   }) {
     final joinDate = DateTime.parse(startDate);
     final totalWorkingDays = exitDate.difference(joinDate).inDays + 1;
@@ -108,8 +111,15 @@ class SeveranceCalculator {
             : (weeklyHours / contractWorkDaysPerWeek).clamp(0.0, 8.0);
 
         if (isMonthly) {
-          // 1. 통상임금(일급) 계산: (기본급 + 식대) / 월소정근로시간 * 일소정근로시간
-          final ordinaryMonthlyWage = monthlyWage + mealAllowance;
+          final totalOtherAllowances = otherAllowances.fold(
+            0.0,
+            (a, b) => a + b,
+          );
+
+          // 1. 통상임금(일급) 계산
+          final ordinaryMonthlyWage = monthlyWage + 
+              (includeMealInOrdinary ? mealAllowance : 0) +
+              (includeAllowanceInOrdinary ? totalOtherAllowances : 0);
           final weeklyHolidayH = weeklyHours >= 15
               ? (weeklyHours / contractWorkDaysPerWeek)
               : 0.0;
@@ -121,15 +131,11 @@ class SeveranceCalculator {
           final ordinaryDailyWage = hoursMultiplier * ordinaryHourlyRate;
 
           // 2. 평균임금(일급) 계산: (월총급여 * 3) / 3개월총일수
-          final totalOtherAllowances = otherAllowances.fold(
-            0.0,
-            (a, b) => a + b,
-          );
           final grossMonthlyWage =
               monthlyWage +
               mealAllowance +
-              fixedOvertimePay +
-              totalOtherAllowances;
+              totalOtherAllowances +
+              (includeFixedOtInAverage ? fixedOvertimePay : 0);
           final totalWageLast3Months = grossMonthlyWage * 3.0;
 
           double calculatedAverage =
@@ -141,6 +147,11 @@ class SeveranceCalculator {
 
           // 월급제는 시간급(hourlyRate)을 통상시급으로 덮어씀 (잔여 연차수당 및 일할급여 계산용)
           hourlyRate = ordinaryHourlyRate;
+
+          // [버그 수정] 통상시급이 갱신되었으므로, 시급 0원(DB 기본값)으로 잘못 산정되었을 수 있는 잔여 연차수당을 재계산
+          if (remainingLeave > 0) {
+            annualLeavePayout = remainingLeave * hoursMultiplier * hourlyRate;
+          }
         } else {
           double totalWageLast3Months = 0;
           final weeklyHoursPureCapped = weeklyHours.clamp(0.0, 40.0);
@@ -212,6 +223,31 @@ class SeveranceCalculator {
     }
 
     final List<String> basis = [];
+    if (isVirtual) {
+      basis.add('[시뮬레이션 모드] 가상의 근무 데이터로 계산됨');
+      basis.add('');
+    }
+
+    basis.add('[고급 노무 설정]');
+    basis.add(' - 식대 통상임금 포함: ${includeMealInOrdinary ? 'ON' : 'OFF'}');
+    basis.add(' - 고정수당 통상임금 포함: ${includeAllowanceInOrdinary ? 'ON' : 'OFF'}');
+    basis.add(' - 고정OT 평균임금 포함: ${includeFixedOtInAverage ? 'ON' : 'OFF'}');
+    basis.add('');
+    
+    if (wageType == 'monthly') {
+      basis.add('[월급제 산정 기준]');
+      basis.add(' - 월 기본급: ${monthlyWage.toInt()}원');
+      basis.add(' - 월 식대: ${mealAllowance.toInt()}원');
+      if (otherAllowances.isNotEmpty) {
+        final totalOtherAllowances = otherAllowances.fold(0.0, (a, b) => a + b);
+        basis.add(' - 기타 수당 합계: ${totalOtherAllowances.toInt()}원');
+      }
+      if (fixedOvertimePay > 0) {
+        basis.add(' - 고정연장수당: ${fixedOvertimePay.toInt()}원');
+      }
+      basis.add('');
+    }
+    
     basis.add('[잔여 연차수당]');
     basis.add(' - 잔여 연차: ${remainingLeave.toStringAsFixed(1)}일');
     if (remainingLeave > 0) {
@@ -221,9 +257,12 @@ class SeveranceCalculator {
       final hoursMultiplier = weeklyHours >= 40.0
           ? 8.0
           : (weeklyHours / contractWorkDaysPerWeek).clamp(0.0, 8.0);
-      basis.add(
-        ' - 1일 가치: ${hoursMultiplier.toStringAsFixed(1)}시간 (단시간 비례 환산)',
-      );
+      if (weeklyHours >= 40.0) {
+        basis.add(' - 1일 소정근로시간: ${hoursMultiplier.toStringAsFixed(1)}시간');
+      } else {
+        basis.add(' - 1일 소정근로시간: ${hoursMultiplier.toStringAsFixed(2)}시간');
+        basis.add('   (주 ${weeklyHours.toStringAsFixed(0)}시간 ÷ 주 ${contractWorkDaysPerWeek.toInt()}일)');
+      }
       basis.add(
         ' - 계산식: 잔여 ${remainingLeave.toStringAsFixed(1)}일 × ${hoursMultiplier.toStringAsFixed(1)}시간 × ${hourlyRate.toInt()}원 = ${annualLeavePayout.toInt()}원',
       );
@@ -235,13 +274,17 @@ class SeveranceCalculator {
     basis.add('[법정 퇴직금]');
     if (isSeveranceEligible) {
       basis.add(' - 총 재직일수: $totalWorkingDays일');
-      basis.add(' - 1일 평균임금: ${averageDailyWage.toInt()}원 (통상임금 하한선 적용 비교)');
+      basis.add(' - 1일 평균임금: ${averageDailyWage.toInt()}원');
+      basis.add('   (1일 평균임금과 통상임금을 비교하여 더 높은 금액 적용)');
       basis.add(
         ' - 계산식: ${averageDailyWage.toInt()}원 × 30일 × ($totalWorkingDays일 ÷ 365일) = ${severancePay.toInt()}원',
       );
     } else {
       basis.add(' - 대상 아님 (1년 미만 또는 주 15시간 미만 근무)');
     }
+
+    basis.add('');
+    basis.add('※ 실제 퇴직금은 출근기록·지급내역·근로계약에 따라 달라질 수 있습니다.');
 
     return ExitSettlementResult(
       workerName: workerName,

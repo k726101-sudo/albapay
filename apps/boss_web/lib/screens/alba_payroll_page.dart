@@ -180,6 +180,9 @@ class AlbaPayrollPage extends StatelessWidget {
               monthlyWage: (worker['monthlyWage'] as num?)?.toDouble() ?? 0.0,
               fixedOvertimeHours: (worker['fixedOvertimeHours'] as num?)?.toDouble() ?? 0.0,
               fixedOvertimePay: (worker['fixedOvertimePay'] as num?)?.toDouble() ?? 0.0,
+              includeMealInOrdinary: worker['includeMealInOrdinary'] as bool? ?? true,
+              includeAllowanceInOrdinary: worker['includeAllowanceInOrdinary'] as bool? ?? false,
+              includeFixedOtInAverage: worker['includeFixedOtInAverage'] as bool? ?? false,
             );
 
             PayrollCalculationResult? result;

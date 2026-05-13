@@ -634,8 +634,16 @@ class PayrollCalculator {
           ? (effectiveRatio / proRataRatio)
           : 1.0;
 
+      final realOtherAllowance = (otherAllowancePay - mealPay).clamp(
+        0.0,
+        double.infinity,
+      );
+
       final conservativeHourly = sRef > 0
-          ? ((baseSalary + mealPay) * probationDiscountOnly) / sRef
+          ? ((baseSalary + 
+              (workerData.includeMealInOrdinary ? mealPay : 0) + 
+              (workerData.includeAllowanceInOrdinary ? realOtherAllowance : 0)
+             ) * probationDiscountOnly) / sRef
           : 0.0; // 초과연장 가산수당 및 최저임금 검증 전용
 
       // ★ 기본시급 (baseSalary / sRef, 식대 제외) — UI 주휴수당 표시 전용
@@ -675,10 +683,6 @@ class PayrollCalculator {
       final proRataFixedOT = fixedOTPayCalc * effectiveRatio;
 
       // mealPay가 allowanceAmounts에 이미 포함되어 있으므로 중복 합산을 방지하기 위해 기타수당에서 차감
-      final realOtherAllowance = (otherAllowancePay - mealPay).clamp(
-        0.0,
-        double.infinity,
-      );
       final proRataOtherAllowance = realOtherAllowance * effectiveRatio;
 
       // 총 지급액 = 구성요소 합산 + 연차수당 + 근로자의날수당 + 휴일근로가산
@@ -1162,6 +1166,9 @@ class PayrollCalculator {
     double mealAllowance = 0.0,
     double fixedOvertimePay = 0.0,
     List<double> otherAllowances = const [],
+    bool includeMealInOrdinary = true,
+    bool includeAllowanceInOrdinary = false,
+    bool includeFixedOtInAverage = false,
   }) => SeveranceCalculator.calculateExitSettlement(
     workerName: workerName,
     startDate: startDate,
@@ -1183,6 +1190,9 @@ class PayrollCalculator {
     mealAllowance: mealAllowance,
     fixedOvertimePay: fixedOvertimePay,
     otherAllowances: otherAllowances,
+    includeMealInOrdinary: includeMealInOrdinary,
+    includeAllowanceInOrdinary: includeAllowanceInOrdinary,
+    includeFixedOtInAverage: includeFixedOtInAverage,
   );
 
   static ShiftSwapResult processShiftSwap({

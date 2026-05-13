@@ -236,6 +236,9 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                         wageHistoryJson: staff.wageHistoryJson,
                         weeklyHolidayDay: staff.weeklyHolidayDay,
                         promotionLogs: _parsePromotionLogs(staff.leavePromotionLogsJson),
+                        includeMealInOrdinary: staff.includeMealInOrdinary,
+                        includeAllowanceInOrdinary: staff.includeAllowanceInOrdinary,
+                        includeFixedOtInAverage: staff.includeFixedOtInAverage,
                       );
 
                       final isInactive = staff.status == 'inactive';
@@ -1099,7 +1102,7 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                       fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
                     ),
                   ),
-                  ?trailing,
+                  if (trailing != null) trailing,
                 ],
               ),
             ],

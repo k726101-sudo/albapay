@@ -197,6 +197,9 @@ class AlbaPayrollPage extends StatelessWidget {
               probationMonths: (worker['probationMonths'] as num?)?.toInt() ?? 0,
               wageHistoryJson: worker['wageHistoryJson']?.toString() ?? '',
               promotionLogs: _parsePromotionLogs(worker['leavePromotionLogsJson']?.toString() ?? ''),
+              includeMealInOrdinary: worker['includeMealInOrdinary'] as bool? ?? true,
+              includeAllowanceInOrdinary: worker['includeAllowanceInOrdinary'] as bool? ?? false,
+              includeFixedOtInAverage: worker['includeFixedOtInAverage'] as bool? ?? false,
             );
 
             final isDispatch = worker['workerType']?.toString() == 'dispatch';

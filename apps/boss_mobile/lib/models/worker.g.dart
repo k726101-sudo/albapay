@@ -85,13 +85,17 @@ class WorkerAdapter extends TypeAdapter<Worker> {
       mealTaxExempt: fields[60] == null ? false : fields[60] as bool,
       isPaperContract: fields[61] == null ? false : fields[61] as bool,
       wageHistoryJson: fields[62] == null ? '' : fields[62] as String,
+      includeMealInOrdinary: fields[63] == null ? true : fields[63] as bool,
+      includeAllowanceInOrdinary:
+          fields[64] == null ? false : fields[64] as bool,
+      includeFixedOtInAverage: fields[65] == null ? false : fields[65] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, Worker obj) {
     writer
-      ..writeByte(63)
+      ..writeByte(66)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -217,7 +221,13 @@ class WorkerAdapter extends TypeAdapter<Worker> {
       ..writeByte(61)
       ..write(obj.isPaperContract)
       ..writeByte(62)
-      ..write(obj.wageHistoryJson);
+      ..write(obj.wageHistoryJson)
+      ..writeByte(63)
+      ..write(obj.includeMealInOrdinary)
+      ..writeByte(64)
+      ..write(obj.includeAllowanceInOrdinary)
+      ..writeByte(65)
+      ..write(obj.includeFixedOtInAverage);
   }
 
   @override
