@@ -436,6 +436,54 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                                 children: [
                                   _buildPeriodNavigator(period),
                                   const SizedBox(height: 16),
+                                  if (sizeMode == 'auto') ...[
+                                    if (standing.isTriggeredAlert)
+                                      Container(
+                                        margin: const EdgeInsets.only(bottom: 16),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade50,
+                                          border: Border.all(color: Colors.red.shade200),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 20),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                '🚨 5인 이상 전환됨: 1/2 규정 도달로 1.5배 가산수당이 활성화되었습니다. 노무 리스크 예방을 위해 월급제 직원의 근로계약서를 재작성하세요.',
+                                                style: TextStyle(color: Colors.red.shade900, fontSize: 13, height: 1.4, fontWeight: FontWeight.w600),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    else if (!standing.isFiveOrMore && standing.daysUntilFiveOrMore > 0 && standing.daysUntilFiveOrMore <= 2)
+                                      Container(
+                                        margin: const EdgeInsets.only(bottom: 16),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.shade50,
+                                          border: Border.all(color: Colors.orange.shade200),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 20),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                '⚠️ 주의: 앞으로 단 ${standing.daysUntilFiveOrMore}번 더 5인 이상 근무 시, 이번 달 전체가 5인 이상으로 강제 전환됩니다! (대타 투입에 주의하세요)',
+                                                style: TextStyle(color: Colors.orange.shade900, fontSize: 13, height: 1.4, fontWeight: FontWeight.w600),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
                                   _buildTotalInfoCard(totalLaborCost),
                                   const SizedBox(height: 32),
                                   _buildStandingCard(
@@ -1355,6 +1403,8 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     final halfDays = operatingDays / 2.0;
     bool isFiveOrMore;
     String reason;
+    bool isTriggeredAlert = false;
+
     if (average >= 5.0) {
       if (daysWithFiveOrMore < halfDays) {
         isFiveOrMore = false;
@@ -1366,12 +1416,16 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     } else {
       if (daysWithFiveOrMore >= halfDays) {
         isFiveOrMore = true;
+        isTriggeredAlert = true;
         reason = '평균 5인 미만이나 5인 이상 근무일이 영업일의 1/2 이상이어서 5인 이상으로 추정';
       } else {
         isFiveOrMore = false;
         reason = '평균 5인 미만이고 5인 이상 근무일이 영업일의 1/2 미만이어서 5인 미만으로 추정';
       }
     }
+
+    int daysUntilFiveOrMore = halfDays.ceil() - daysWithFiveOrMore;
+    if (daysUntilFiveOrMore < 0) daysUntilFiveOrMore = 0;
 
     return StandingResult(
       average: average,
@@ -1381,6 +1435,8 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
       daysWithFiveOrMore: daysWithFiveOrMore,
       isFiveOrMore: isFiveOrMore,
       fiveOrMoreDecisionReason: reason,
+      daysUntilFiveOrMore: daysUntilFiveOrMore,
+      isTriggeredAlert: isTriggeredAlert,
     );
   }
 
@@ -1511,6 +1567,8 @@ class StandingResult {
   final int daysWithFiveOrMore;
   final bool isFiveOrMore;
   final String fiveOrMoreDecisionReason;
+  final int daysUntilFiveOrMore; // 전환까지 남은 일수
+  final bool isTriggeredAlert; // 원래 5인 미만이었으나 기어코 전환된 경우
 
   const StandingResult({
     required this.average,
@@ -1520,6 +1578,8 @@ class StandingResult {
     required this.daysWithFiveOrMore,
     required this.isFiveOrMore,
     required this.fiveOrMoreDecisionReason,
+    this.daysUntilFiveOrMore = 0,
+    this.isTriggeredAlert = false,
   });
 }
 
