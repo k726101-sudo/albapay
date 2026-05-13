@@ -643,7 +643,7 @@ void _showRiskWarningDialog(BuildContext context, StoreInfo? store) {
           ],
           const SizedBox(height: 16),
           const Text(
-            '실제 상시 근로자 수가 5인 이상일 경우 연장/야간/휴일수당(50% 가산) 지급 의무가 발생합니다. 설정이 실제 상황과 다를 경우 노무 리스크가 발생할 수 있으니 주의하시기 바랍니다.',
+            '사업장 운영 형태에 따라 근로기준법상 5인 이상 사업장 규정이 적용될 수 있습니다. 설정이 실제 상황과 다를 경우 노무사 확인을 권장합니다.',
             style: TextStyle(fontSize: 12, color: Color(0xFFE24B4A)),
           ),
         ],
@@ -828,7 +828,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           : '[자동]';
                   final legalText = isTenOrMore
                       ? '10인 이상 (취업규칙 신고 대상)'
-                      : (isFiveOrMore ? '5인 이상 $modeBadge' : '5인 이하 $modeBadge');
+                      : (isFiveOrMore ? '추정 5인 이상 $modeBadge' : '추정 5인 미만 $modeBadge');
                   final legalColor = isTenOrMore
                       ? const Color(0xFF8E44AD)
                       : (isNearTen
@@ -842,7 +842,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           ? (storedTotalDays > 0
                               ? '평균 ${avgWorkers.toStringAsFixed(1)}명 · 5인↑ $storedDaysWithFive/$storedTotalDays일'
                               : '상시평균 : ${avgWorkers.toStringAsFixed(1)}명')
-                          : '수동 설정 (자동: ${avgWorkers.toStringAsFixed(1)}명 / ${autoIsFiveOrMore ? "5인 이상" : "5인 미만"})';
+                          : '수동 설정 (자동 추정: ${avgWorkers.toStringAsFixed(1)}명 / ${autoIsFiveOrMore ? "5인 이상" : "5인 미만"})';
 
                   final isMismatched = sizeMode.startsWith('manual_') && (isFiveOrMore != autoIsFiveOrMore);
 
@@ -1031,14 +1031,14 @@ class _DashboardPageState extends State<DashboardPage> {
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('5인/10인 이상 사업장 안내'),
+        title: const Text('상시근로자 수 추정 기준 안내 (참고용)'),
         content: const SingleChildScrollView(
           child: Text(
-            '상시근로자 수는 정산 기간의 연인원/영업일수로 계산합니다.\n\n'
-            '• 5인 이상: 연장·야간·휴일 가산수당(1.5배) 등 주요 규정 적용\n'
+            '상시근로자 수는 정산 기간의 근무기록·계약정보 기준 연인원/영업일수로 추정합니다.\n\n'
+            '• 5인 이상: 연장·야간·휴일 가산수당(1.5배) 등 주요 규정 적용 가능\n'
             '• 10인 이상: 취업규칙 신고 의무 등 행정 의무 강화\n\n'
-            '앱은 출퇴근 기록 기반으로 자동 판정하며, '
-            '근무표 수정/대체근무가 많을수록 평균 인원이 빠르게 변할 수 있습니다.',
+            '앱은 출퇴근 기록과 계약 근무요일을 바탕으로 자동 추정하며, '
+            '정확한 판단은 노무사 확인을 권장합니다.',
             style: TextStyle(height: 1.35),
           ),
         ),
@@ -1370,7 +1370,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        '사전 스케줄이 없는 대체/추가 근무입니다. 상시 5인 이상 사업장이므로 상황에 따라 연장 근로에 대한 가산 수당(1.5배)이 발생할 수 있습니다.',
+                        '사전 스케줄이 없는 대체/추가 근무입니다. 사업장 운영 형태에 따라 연장 근로에 대한 가산 수당(1.5배)이 발생할 수 있습니다.',
                         style: TextStyle(fontSize: 12, color: Color(0xFFA32D2D)),
                       ),
                     ),

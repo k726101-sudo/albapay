@@ -431,12 +431,12 @@ class _ContractPageState extends State<ContractPage> {
                               const SizedBox(height: 4),
                               Text(
                                 isFiveOrMore
-                                    ? '• 5인 이상 사업장 (근로기준법 제56조 적용)\n'
+                                    ? '• 사업장 운영 형태에 따라 근로기준법 제56조 적용 가능\n'
                                       '• 통상시급 ${_formatContractMoney(ordinaryHourly.round())}원 × 1.5배 = ${_formatContractMoney((ordinaryHourly * 1.5).round())}원/h\n'
                                       '• 월 ${worker.fixedOvertimeHours.toStringAsFixed(1)}h 이하: 전액 지급 (차액 미공제)\n'
                                       '• 초과 시: 초과분 × 1.5배 가산 별도 지급\n'
                                       '• 휴일/휴무일 근무: 별도 지급 (고정연장시간에서 차감 불가)'
-                                    : '• 5인 미만 사업장 (가산수당 미적용)\n'
+                                    : '• 사업장 운영 형태에 따라 가산수당 미적용 가능\n'
                                       '• 통상시급 ${_formatContractMoney(ordinaryHourly.round())}원 기준\n'
                                       '• 월 ${worker.fixedOvertimeHours.toStringAsFixed(1)}h 이하: 전액 지급 (차액 미공제)\n'
                                       '• 초과 시: 초과분 × 통상시급 별도 지급\n'

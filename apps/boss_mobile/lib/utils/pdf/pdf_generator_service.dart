@@ -183,7 +183,7 @@ class PdfGeneratorService {
                     ] else ...[
                       pw.Text('- 시급: ${_fmtMoney(int.tryParse(hourlyWage) ?? 0)}원', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
                     ],
-                    pw.Text('- 가산임금율(상시근로자 5인 이상 : 연장, 야간, 휴일근로 등)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+                    pw.Text('- 가산임금율(사업장 운영 형태에 따라 적용 : 연장, 야간, 휴일근로 등)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
                     pw.Padding(
                       padding: const pw.EdgeInsets.only(left: 8),
                       child: pw.Text(': 법내 초과근로는 가산임금을 지급하지 않고, 1일 및 1주 법정기준근로시간을 초과하는 경우,\n  야간 및 휴일근로의 경우 통상임금의 50% 가산 지급', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
@@ -199,7 +199,7 @@ class PdfGeneratorService {
               pw.Text('7. 연차유급휴가', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
               pw.Padding(
                 padding: const pw.EdgeInsets.only(left: 12, top: 2),
-                child: pw.Text('- 연차유급휴가는 근로기준법에서 정하는 바에 따라 부여함 ※상시근로자 5인 이상', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+                child: pw.Text('- 연차유급휴가는 근로기준법에서 정하는 바에 따라 부여함 ※사업장 운영 형태에 따라 적용', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
               ),
               
               pw.SizedBox(height: 8),
@@ -476,7 +476,7 @@ class PdfGeneratorService {
                       _paddedCell('⑤지급방법', font),
                       _centeredCell('통장입금', font),
                       _paddedCell('⑥수당가산율', font),
-                      _centeredCell('50%, 상시 5인이상 점포', font),
+                      _centeredCell('50%, 사업장 운영형태에 따라 적용', font),
                     ],
                   ),
                 ]

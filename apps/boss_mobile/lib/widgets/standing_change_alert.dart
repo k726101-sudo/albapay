@@ -131,14 +131,14 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
         // First-time for this device/session: show guidance once.
         _showSnack(
           message: currentIsFive
-              ? '상시근로자 5인 이상으로 판정되었습니다. (출근기록 기준)\n가산 적용(연장/야간/휴일) 확인을 권장합니다.'
-              : '상시근로자 5인 미만으로 판정되었습니다. (출근기록 기준)\n출근기록 누락이 없도록 확인해 주세요.',
+              ? '근무기록·계약정보 기준 추정 상시근로자 수: 5인 이상\n사업장 운영 형태에 따라 가산수당 적용 여부를 확인하시기 바랍니다. (참고용)'
+              : '근무기록·계약정보 기준 추정 상시근로자 수: 5인 미만\n출근기록 누락이 없도록 확인해 주세요. (참고용)',
         );
       } else if (shouldAlarmUnderToOver || shouldAlarmOverToUnder) {
         _showSnack(
           message: currentIsFive
-              ? '주의: 상시근로자 5인 이상으로 바뀌었습니다. (출근기록 기준)\n연장근로/야간근로/휴일근로 가산 적용 기준을 확인해 주세요.'
-              : '안내: 상시근로자 5인 미만으로 바뀌었습니다. (출근기록 기준)\n그래도 출근기록 정확성 확인을 권장합니다.',
+              ? '안내: 추정 상시근로자 수가 5인 이상으로 변동되었습니다.\n사업장 운영 형태에 따라 가산수당(연장/야간/휴일) 적용 여부를 확인해 주세요. (참고용)'
+              : '안내: 추정 상시근로자 수가 5인 미만으로 변동되었습니다.\n출근기록 정확성 확인을 권장합니다. (참고용)',
         );
 
         // ★ 5인 전환 발생 + 월급제 직원이 있으면 대시보드 배너 활성화
@@ -220,7 +220,7 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
         title: const Text('10인 이상 행정 체크리스트'),
         content: const SingleChildScrollView(
           child: Text(
-            '상시근로자 10인 이상 사업장으로 판정되었습니다.\n\n'
+            '근무기록 기준 추정 상시근로자 수가 10인 이상입니다. (참고용)\n\n'
             '1) 취업규칙 신고 대상 여부 확인\n'
             '2) 취업규칙(변경 포함) 작성 및 관할 기관 신고 준비\n'
             '3) 연장/야간/휴일 가산수당 지급체계 재점검\n'
@@ -270,16 +270,16 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
         : Icons.trending_down_rounded;
 
     final String title = isUpgrade
-        ? '⚠️ 5인 이상 전환 — 근로계약서 재작성 필요'
-        : '📋 5인 미만 전환 — 근로계약서 확인 필요';
+        ? '⚠️ 추정 상시근로자 수 5인 이상 변동 — 근로계약서 확인 필요'
+        : '📋 추정 상시근로자 수 5인 미만 변동 — 근로계약서 확인 필요';
 
     final String body = isUpgrade
-        ? '사업장이 5인 미만 → 5인 이상으로 전환되었습니다.\n'
-          '고정연장수당의 가산율이 1.0배 → 1.5배로 변경되므로,\n'
-          '월급제 직원($_affectedMonthlyCount명)의 근로계약서를 재작성해야 합니다.'
-        : '사업장이 5인 이상 → 5인 미만으로 전환되었습니다.\n'
-          '고정연장수당의 가산율이 1.5배 → 1.0배로 변경되므로,\n'
-          '월급제 직원($_affectedMonthlyCount명)의 근로계약서를 확인하세요.';
+        ? '추정 상시근로자 수가 5인 미만 → 5인 이상으로 변동되었습니다.\n'
+          '사업장 운영 형태에 따라 가산율이 1.0배 → 1.5배로 변경될 수 있으므로,\n'
+          '월급제 직원($_affectedMonthlyCount명)의 근로계약서 확인을 권장합니다.'
+        : '추정 상시근로자 수가 5인 이상 → 5인 미만으로 변동되었습니다.\n'
+          '사업장 운영 형태에 따라 가산율이 1.5배 → 1.0배로 변경될 수 있으므로,\n'
+          '월급제 직원($_affectedMonthlyCount명)의 근로계약서 확인을 권장합니다.';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -533,6 +533,6 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
 }
 
 enum _StandingAlertType {
-  underToOver, // 5인 미만 → 5인 이상
-  overToUnder, // 5인 이상 → 5인 미만
+  underToOver, // 추정 5인 미만 → 5인 이상
+  overToUnder, // 추정 5인 이상 → 5인 미만
 }

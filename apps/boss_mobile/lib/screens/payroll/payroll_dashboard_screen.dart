@@ -500,7 +500,7 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                                           averageWorkers: standing.average,
                                           fiveOrMoreDecisionReason: standing.isFiveOrMore
                                               ? '자동 산정: 평균 ${standing.average.toStringAsFixed(1)}명, 5인↑ ${standing.daysWithFiveOrMore}/${standing.operatingDays}일'
-                                              : (isFiveOrMoreByStore ? '사장님 수동 설정 (5인 이상)' : '자동 산정: 5인 미만'),
+                                              : (isFiveOrMoreByStore ? '사장님 수동 설정 (5인 이상)' : '자동 추정: 5인 미만'),
                                         ),
                                         icon: const Icon(Icons.send_to_mobile),
                                         label: const Text(
@@ -633,8 +633,8 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
       SnackBar(
         content: Text(
           finalIsFiveOrMore
-              ? '최종 판정 완료: 상시근로자 5인 이상으로 최신화했습니다.'
-              : '최종 판정 완료: 상시근로자 5인 미만으로 최신화했습니다.',
+              ? '추정 결과 갱신: 상시근로자 5인 이상으로 추정됩니다. (참고용)'
+              : '추정 결과 갱신: 상시근로자 5인 미만으로 추정됩니다. (참고용)',
         ),
       ),
     );
@@ -716,7 +716,7 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  isFive ? '법적 상태: 5인 이상' : '법적 상태: 5인 이하',
+                  isFive ? '추정 상시근로자: 5인 이상 (참고용)' : '추정 상시근로자: 5인 미만 (참고용)',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isFive ? Colors.orange.shade800 : Colors.green.shade800,
@@ -770,19 +770,19 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('5인 이상/이하 사업장 기준 안내'),
+        title: const Text('상시근로자 수 추정 기준 안내 (참고용)'),
         content: const SingleChildScrollView(
           child: Text(
-            '💡 판정 공식 (상시근로자 수)\n\n'
-            '산정 기간 동안 사용한 근로자의 \'연인원\' / 산정 기간 중 매장 \'영업 일수\'\n'
-            '앱은 출퇴근 기록을 바탕으로 매일 자동 계산합니다.\n\n'
-            '⚖️ 법적 주요 변화 (5인 이상 시 적용)\n\n'
-            '가산수당 지급: 연장·야간·휴일 근로 시 시급의 1.5배 지급 의무.\n\n'
-            '연차유급휴가: 조건 충족 시 연차 휴가 부여 또는 수당 지급 의무.\n\n'
-            '해고 제한: 정당한 이유 없는 해고 금지 및 해고 서면 통지 의무.\n\n'
-            '※ 주의: 대근이 많아져 일시적으로 평균 5인이 넘더라도 그달은 5인 이상 사업장으로 간주됩니다.\n\n'
-            '🚨 [특별 조항 판정 기준]\n'
-            '한 달 평균 근로자 수가 5인 미만이더라도, 예외적으로 5인 이상이 동시에 출근한 날이 한 달 영업일의 과반수(1/2) 이상을 차지하면 노동법 특별 조항에 의해 [5인 이상 사업장]으로 자동 간주됩니다.',
+            '💡 추정 공식 (상시근로자 수)\n\n'
+            '산정 기간 동안 근무기록·계약정보 기준 \'연인원\' / \'영업 일수\'\n'
+            '앱은 출퇴근 기록과 계약 근무요일을 바탕으로 자동 추정합니다.\n\n'
+            '⚖️ 근로기준법상 5인 이상 시 적용 가능 규정\n\n'
+            '가산수당: 연장·야간·휴일 근로 시 시급의 1.5배 지급.\n\n'
+            '연차유급휴가: 조건 충족 시 연차 휴가 부여 또는 수당 지급.\n\n'
+            '해고 제한: 정당한 이유 없는 해고 금지 및 서면 통지 의무.\n\n'
+            '※ 이 수치는 참고용 추정치이며, 정확한 판단은 노무사 확인을 권장합니다.\n\n'
+            '🚨 [참고: 특별 조항]\n'
+            '월 평균 5인 미만이더라도, 5인 이상 근무일이 영업일의 과반 이상이면 5인 이상 규정이 적용될 수 있습니다. (근로기준법 시행령 제7조의 2 참조)',
             style: TextStyle(height: 1.4),
           ),
         ),
@@ -1310,18 +1310,18 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     if (average >= 5.0) {
       if (daysWithFiveOrMore < halfDays) {
         isFiveOrMore = false;
-        reason = '평균 5인 이상이나 5인 이상 출근일이 영업일의 1/2 미만이어서 5인 미만으로 판정';
+        reason = '평균 5인 이상이나 5인 이상 근무일이 영업일의 1/2 미만이어서 5인 미만으로 추정';
       } else {
         isFiveOrMore = true;
-        reason = '평균 5인 이상이며 5인 이상 출근일이 영업일의 1/2 이상이어서 5인 이상으로 판정';
+        reason = '평균 5인 이상이며 5인 이상 근무일이 영업일의 1/2 이상이어서 5인 이상으로 추정';
       }
     } else {
       if (daysWithFiveOrMore >= halfDays) {
         isFiveOrMore = true;
-        reason = '평균 5인 미만이나 5인 이상 출근일이 영업일의 1/2 이상이어서 5인 이상으로 판정';
+        reason = '평균 5인 미만이나 5인 이상 근무일이 영업일의 1/2 이상이어서 5인 이상으로 추정';
       } else {
         isFiveOrMore = false;
-        reason = '평균 5인 미만이고 5인 이상 출근일이 영업일의 1/2 미만이어서 5인 미만으로 판정';
+        reason = '평균 5인 미만이고 5인 이상 근무일이 영업일의 1/2 미만이어서 5인 미만으로 추정';
       }
     }
 

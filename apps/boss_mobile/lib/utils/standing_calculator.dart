@@ -98,7 +98,7 @@ StandingResult calculateStandingFromAttendances({
   bool inRange(DateTime day) =>
       !day.isBefore(periodStart) && !day.isAfter(periodEnd);
 
-  // 1. 실제 출퇴근 기록 반영
+  // ── 1. 실제 출퇴근 기록 반영 (1차 기준) ──
   for (final att in attendances) {
     final inDay = dayKey(att.clockIn);
     if (inRange(inDay)) {
@@ -113,18 +113,47 @@ StandingResult calculateStandingFromAttendances({
     }
   }
 
-  // 2. 가상직원 시뮬레이션 반영 (테스트 편의용)
+  // ── 2. 계약 기반 보조 반영 (2차 보조: 출퇴근 누락 방지) ──
+  // 조건: active 상태 + 해당 요일이 근무요일 + 최근 30일 내 출퇴근 기록 ≥ 1건
+  // 제외: 퇴직자(inactive), 파견직(dispatch)
+  final recentCutoff = periodEnd.subtract(const Duration(days: 30));
+  final staffRecentActivity = <String, bool>{};
+
+  for (final staff in staffList) {
+    if (staff.status == 'inactive') continue;
+    if (staff.workerType == 'dispatch') continue;
+
+    // 최근 30일 내 활동 여부 캐싱
+    if (!staffRecentActivity.containsKey(staff.id)) {
+      staffRecentActivity[staff.id] = attendances.any((a) =>
+          a.staffId == staff.id &&
+          !a.clockIn.isBefore(recentCutoff));
+    }
+  }
+
   for (int i = 0; i < totalDays; i++) {
     final day = DateTime(periodStart.year, periodStart.month, periodStart.day + i);
     final weekday = day.weekday % 7; // 0=Sun, ..., 6=Sat (matched Worker.workDays)
 
     for (final staff in staffList) {
+      if (staff.status == 'inactive') continue;
       if (staff.workerType == 'dispatch') continue;
+
+      // 가상직원: 기존 로직 유지 (테스트 시뮬레이션용)
       if (staff.name.contains('가상')) {
-        // 해당 요일이 가상직원의 근무요일에 포함되어 있다면 인원수로 추가
         if (staff.workDays.contains(weekday)) {
           dailyStaff.putIfAbsent(day, () => <String>{}).add(staff.id);
         }
+        continue;
+      }
+
+      // 실제 직원: 해당 날짜에 이미 attendance로 집계되었으면 스킵
+      if (dailyStaff[day]?.contains(staff.id) ?? false) continue;
+
+      // 계약 근무요일 일치 + 최근 30일 활동 존재 → 인원 추가
+      if (staff.workDays.contains(weekday) &&
+          (staffRecentActivity[staff.id] ?? false)) {
+        dailyStaff.putIfAbsent(day, () => <String>{}).add(staff.id);
       }
     }
   }
@@ -132,7 +161,7 @@ StandingResult calculateStandingFromAttendances({
   int totalPersonDays = 0;
   int daysWithFiveOrMore = 0;
   int daysWithTenOrMore = 0;
-  int operatingDays = 0; // New: days with at least one person
+  int operatingDays = 0; // 가동일수: 1명 이상 근무한 날
 
   for (int i = 0; i < totalDays; i++) {
     final day = DateTime(periodStart.year, periodStart.month, periodStart.day + i);
@@ -145,7 +174,7 @@ StandingResult calculateStandingFromAttendances({
     }
   }
 
-  // Use operatingDays (가동일수) instead of calendar totalDays for average
+  // 평균 산출: 가동일수 기준
   final average = operatingDays == 0 ? 0.0 : (totalPersonDays / operatingDays);
   final halfDays = operatingDays / 2.0;
   bool isFiveOrMore;
@@ -154,19 +183,19 @@ StandingResult calculateStandingFromAttendances({
     if (daysWithFiveOrMore < halfDays) {
       // 시행령 제7조의2 제2항 예외
       isFiveOrMore = false;
-      reason = '[예외 적용] 한 달 평균 5인 이상이지만, 5인 이상 출근한 날이 한 달 영업일의 절반(1/2)에 못 미치므로 최종적으로 [5인 미만] 사업장으로 판정되었습니다.';
+      reason = '[참고] 근무기록·계약정보 기준 평균 약 ${average.toStringAsFixed(1)}명이나, 5인 이상 근무일이 영업일의 절반 미만이므로 5인 미만으로 추정됩니다. (노무 판단 참고용)';
     } else {
       isFiveOrMore = true;
-      reason = '[정상 적용] 한 달 평균 5인 이상 근무하며, 5인 이상 출근한 날도 영업일의 절반(1/2)을 넘으므로 최종적으로 [5인 이상] 사업장으로 판정되었습니다.';
+      reason = '[참고] 근무기록·계약정보 기준 평균 약 ${average.toStringAsFixed(1)}명이며, 5인 이상 근무일이 영업일 절반을 넘으므로 5인 이상으로 추정됩니다. (노무 판단 참고용)';
     }
   } else {
     if (operatingDays > 0 && daysWithFiveOrMore >= halfDays) {
       // 시행령 제7조의2 제3항 예외
       isFiveOrMore = true;
-      reason = '[특별 조항 적용] 한 달 평균 근무자는 5인 미만이지만, 5인 이상이 동시에 출근한 날이 한 달 영업일의 절반(1/2) 이상을 차지하므로 노동법상 [5인 이상] 사업장으로 간주됩니다.';
+      reason = '[참고] 평균 약 ${average.toStringAsFixed(1)}명이나, 5인 이상 근무일이 영업일 절반 이상이므로 5인 이상으로 추정됩니다. (근로기준법 시행령 제7조의2 참조 / 노무 판단 참고용)';
     } else {
       isFiveOrMore = false;
-      reason = '[정상 적용] 한 달 평균 5인 미만이고 5인 이상 출근한 날도 영업일의 절반 미만이므로 최종적으로 [5인 미만] 사업장으로 유지됩니다.';
+      reason = '[참고] 근무기록·계약정보 기준 평균 약 ${average.toStringAsFixed(1)}명이며, 5인 미만으로 추정됩니다. (노무 판단 참고용)';
     }
   }
   final isTenOrMore = average >= 10.0;
@@ -184,4 +213,5 @@ StandingResult calculateStandingFromAttendances({
     fiveOrMoreLegalReason: reason,
   );
 }
+
 
