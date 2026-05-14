@@ -25,6 +25,9 @@ class _DetailedVerifyScreenState extends State<DetailedVerifyScreen> {
   final _periodEndCtrl = TextEditingController(text: '2026-06-15');
   final _scheduleStartCtrl = TextEditingController(text: '09:00');
   final _scheduleEndCtrl = TextEditingController(text: '18:00');
+  final _overtimeHoursCtrl = TextEditingController(text: '0');
+  final _nightHoursCtrl = TextEditingController(text: '0');
+  final _absentDaysCtrl = TextEditingController(text: '0');
   List<int> _scheduledDays = [1, 2, 3, 4, 5];
   bool _isFiveOrMore = true;
   bool _isPaidBreak = false;
@@ -49,6 +52,9 @@ class _DetailedVerifyScreenState extends State<DetailedVerifyScreen> {
     _periodEndCtrl.dispose();
     _scheduleStartCtrl.dispose();
     _scheduleEndCtrl.dispose();
+    _overtimeHoursCtrl.dispose();
+    _nightHoursCtrl.dispose();
+    _absentDaysCtrl.dispose();
     _pasteCtrl.dispose();
     super.dispose();
   }
@@ -195,13 +201,6 @@ class _DetailedVerifyScreenState extends State<DetailedVerifyScreen> {
   }
 
   void _calculate() {
-    if (_parsedRows.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('출퇴근 데이터를 먼저 입력/파싱해주세요'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
-
     try {
       final breakMin = int.tryParse(_breakMinCtrl.text) ?? 60;
       final weeklyHours = double.tryParse(_weeklyHoursCtrl.text) ?? 35;
@@ -218,12 +217,85 @@ class _DetailedVerifyScreenState extends State<DetailedVerifyScreen> {
       final schedEndHour = int.tryParse(schedEndParts[0]) ?? 18;
       final schedEndMin = schedEndParts.length > 1 ? (int.tryParse(schedEndParts[1]) ?? 0) : 0;
 
+      // 출퇴근 데이터가 있으면 파싱 시도
+      if (_pasteCtrl.text.trim().isNotEmpty && _parsedRows.isEmpty) {
+        _parseInput();
+      }
+
+      // 출퇴근 데이터가 없으면 스케줄 기반으로 자동 생성
+      final useSchedule = _parsedRows.isEmpty;
+      final List<_ParsedRow> rows;
+
+      if (useSchedule) {
+        rows = [];
+        for (var d = periodStart; !d.isAfter(periodEnd); d = d.add(const Duration(days: 1))) {
+          final weekday = d.weekday;
+          if (!_scheduledDays.contains(weekday)) continue;
+
+          final clockIn = DateTime(d.year, d.month, d.day, schedStartHour, schedStartMin);
+          final clockOut = DateTime(d.year, d.month, d.day, schedEndHour, schedEndMin);
+          rows.add(_ParsedRow(date: d, clockIn: clockIn, clockOut: clockOut, raw: '스케줄'));
+        }
+
+        // 결근 일수 제거 (마지막 근무일부터)
+        final absentDays = int.tryParse(_absentDaysCtrl.text) ?? 0;
+        if (absentDays > 0 && absentDays < rows.length) {
+          rows.removeRange(rows.length - absentDays, rows.length);
+        }
+
+        // 연장근로 반영 (근무일에 균등 분배)
+        final overtimeHours = double.tryParse(_overtimeHoursCtrl.text) ?? 0;
+        if (overtimeHours > 0 && rows.isNotEmpty) {
+          final extraMinPerDay = (overtimeHours * 60 / rows.length).round();
+          for (var i = 0; i < rows.length; i++) {
+            final r = rows[i];
+            rows[i] = _ParsedRow(
+              date: r.date,
+              clockIn: r.clockIn,
+              clockOut: r.clockOut.add(Duration(minutes: extraMinPerDay)),
+              raw: '스케줄+연장',
+            );
+          }
+        }
+
+        // 야간근로 반영 (앞쪽 근무일부터 22:00 이후로 연장)
+        final nightHours = double.tryParse(_nightHoursCtrl.text) ?? 0;
+        if (nightHours > 0 && rows.isNotEmpty) {
+          var remainingNightMin = (nightHours * 60).round();
+          for (var i = 0; i < rows.length && remainingNightMin > 0; i++) {
+            final r = rows[i];
+            final night22 = DateTime(r.date.year, r.date.month, r.date.day, 22, 0);
+            // 현재 퇴근이 22시 이전이면 22시까지 연장 + 야간시간 추가
+            final nightToAdd = remainingNightMin.clamp(0, 120); // 하루 최대 2시간
+            final newClockOut = night22.add(Duration(minutes: nightToAdd));
+            // 퇴근을 22:00 + 야간시간으로 설정 (기존 퇴근보다 늦으면)
+            if (newClockOut.isAfter(r.clockOut)) {
+              rows[i] = _ParsedRow(
+                date: r.date,
+                clockIn: r.clockIn,
+                clockOut: newClockOut,
+                raw: '스케줄+야간',
+              );
+            }
+            remainingNightMin -= nightToAdd;
+          }
+        }
+      } else {
+        rows = _parsedRows;
+      }
+
+      if (rows.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('정산기간 내 근무일이 없습니다'), backgroundColor: Colors.orange),
+        );
+        return;
+      }
+
       // Attendance 객체 변환
       final attendances = <Attendance>[];
-      for (int i = 0; i < _parsedRows.length; i++) {
-        final r = _parsedRows[i];
+      for (int i = 0; i < rows.length; i++) {
+        final r = rows[i];
 
-        // 근무 스케줄 시간을 고정값으로 설정 (사용자 입력 기반)
         final scheduledStart = DateTime(
           r.date.year, r.date.month, r.date.day,
           schedStartHour, schedStartMin,
@@ -242,7 +314,7 @@ class _DetailedVerifyScreenState extends State<DetailedVerifyScreen> {
           type: AttendanceType.web,
           scheduledShiftStartIso: scheduledStart.toIso8601String(),
           scheduledShiftEndIso: scheduledEnd.toIso8601String(),
-          overtimeApproved: true, // 검증 모드에서는 연장 승인된 것으로
+          overtimeApproved: true,
         ));
       }
 
@@ -349,6 +421,14 @@ class _DetailedVerifyScreenState extends State<DetailedVerifyScreen> {
             child: Text('→', style: TextStyle(color: VerifyTheme.textSecondary, fontSize: 16)),
           ),
           Expanded(child: _inputField('퇴근 시간', _scheduleEndCtrl)),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: _inputField('연장근로 (h)', _overtimeHoursCtrl, isNumber: true)),
+          const SizedBox(width: 12),
+          Expanded(child: _inputField('야간근로 (h)', _nightHoursCtrl, isNumber: true)),
+          const SizedBox(width: 12),
+          Expanded(child: _inputField('결근 일수', _absentDaysCtrl, isNumber: true)),
         ]),
         const SizedBox(height: 12),
 
