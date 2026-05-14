@@ -7,6 +7,7 @@ import 'package:shared_logic/shared_logic.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/store_info.dart';
 import '../models/worker.dart';
@@ -581,6 +582,30 @@ class _ContractPageState extends State<ContractPage> {
                       style: TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.w600)),
                   ],
                 ),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.picture_as_pdf, color: Color(0xFFD32F2F)),
+                label: const Text('📄 법적 원본 PDF 열람 / 다운로드', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1a1a2e))),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: Color(0xFFD32F2F), width: 1.5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  backgroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  if (doc.pdfUrl != null && doc.pdfUrl!.isNotEmpty) {
+                    final url = Uri.parse(doc.pdfUrl!);
+                    try {
+                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PDF를 열 수 없습니다.')));
+                    }
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PDF 파일이 아직 생성되지 않았거나 불러올 수 없습니다.')));
+                  }
+                },
               ),
               if (widget.isWizardMode) ...[
                 const SizedBox(height: 16),
