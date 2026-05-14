@@ -20,10 +20,10 @@ class MonthlyVerifyScreen extends StatefulWidget {
 
 class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
   // ─── 월급 구성 ───
-  final _baseSalaryCtrl = TextEditingController(text: '2150000');
-  final _mealPayCtrl = TextEditingController(text: '200000');
-  final _fixedOtPayCtrl = TextEditingController(text: '140000');
-  final _fixedOtHoursCtrl = TextEditingController(text: '0');
+  final _baseSalaryCtrl = TextEditingController();
+  final _mealPayCtrl = TextEditingController();
+  final _fixedOtPayCtrl = TextEditingController();
+  final _fixedOtHoursCtrl = TextEditingController();
   final _weeklyHoursCtrl = TextEditingController(text: '40');
 
   DateTime _periodStart = DateTime(2026, 6, 1);
@@ -292,21 +292,21 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
 
             const Text('월급 구성', style: TextStyle(fontWeight: FontWeight.w600, color: VerifyTheme.accentSecondary)),
             const SizedBox(height: 12),
-            _buildField('통상임금 / 기본급 (원)', _baseSalaryCtrl),
+            _buildField('통상임금 / 기본급 (원)', _baseSalaryCtrl, hint: '예) 2,156,880'),
             const SizedBox(height: 12),
             _buildRow([
-              _buildField('식대 (원)', _mealPayCtrl, enabled: _includeMeal),
+              _buildField('식대 (원)', _mealPayCtrl, enabled: _includeMeal, hint: '예) 200,000'),
               _buildSwitchCompact('식대 포함', _includeMeal, (v) => setState(() => _includeMeal = v)),
             ]),
             const SizedBox(height: 12),
             _buildRow([
-              _buildField('고정연장수당 (원)', _fixedOtPayCtrl, enabled: _includeFixedOt),
+              _buildField('고정연장수당 (원)', _fixedOtPayCtrl, enabled: _includeFixedOt, hint: '예) 140,000'),
               _buildSwitchCompact('고정OT 포함', _includeFixedOt, (v) => setState(() => _includeFixedOt = v)),
             ]),
             const SizedBox(height: 12),
             _buildRow([
-              _buildField('고정연장시간 (h)', _fixedOtHoursCtrl, enabled: _includeFixedOt),
-              _buildField('주 소정근로시간', _weeklyHoursCtrl),
+              _buildField('고정연장시간 (h)', _fixedOtHoursCtrl, enabled: _includeFixedOt, hint: '예) 0'),
+              _buildField('주 소정근로시간', _weeklyHoursCtrl, hint: '예) 40'),
             ]),
             const SizedBox(height: 12),
             _buildDateRow(),
@@ -431,7 +431,7 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
     );
   }
 
-  Widget _buildField(String label, TextEditingController ctrl, {bool enabled = true, bool isText = false}) {
+  Widget _buildField(String label, TextEditingController ctrl, {bool enabled = true, bool isText = false, String? hint}) {
     return Opacity(
       opacity: enabled ? 1.0 : 0.4,
       child: TextField(
@@ -439,7 +439,12 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
         enabled: enabled,
         keyboardType: isText ? TextInputType.text : const TextInputType.numberWithOptions(decimal: true),
         inputFormatters: isText ? null : [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))],
-        decoration: InputDecoration(labelText: label, isDense: true),
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          hintStyle: TextStyle(color: VerifyTheme.textSecondary.withValues(alpha: 0.4)),
+          isDense: true,
+        ),
         style: const TextStyle(color: VerifyTheme.textPrimary),
       ),
     );

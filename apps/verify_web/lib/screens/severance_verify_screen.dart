@@ -29,13 +29,13 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
 
   // 월급제 옵션
   String _wageType = 'hourly'; // hourly or monthly
-  final _monthlySalaryCtrl = TextEditingController(text: '0');
-  final _mealPayCtrl = TextEditingController(text: '0');
-  final _fixedOtCtrl = TextEditingController(text: '0');
+  final _monthlySalaryCtrl = TextEditingController();
+  final _mealPayCtrl = TextEditingController();
+  final _fixedOtCtrl = TextEditingController();
   bool _includeMeal = true;
   bool _includeFixedOt = true;
   bool _includeEtcPay = false;
-  final _etcPayCtrl = TextEditingController(text: '0');
+  final _etcPayCtrl = TextEditingController();
   final _etcPayLabelCtrl = TextEditingController(text: '기타수당');
 
   // 수동 평균임금
@@ -222,22 +222,22 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
 
         if (_wageType == 'monthly') ...[
           const SizedBox(height: 12),
-          _inputField('통상임금 / 기본급 (월)', _monthlySalaryCtrl, isNumber: true),
+          _inputField('통상임금 / 기본급 (월)', _monthlySalaryCtrl, isNumber: true, hint: '예) 2,156,880'),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _inputField('식대 (월)', _mealPayCtrl, isNumber: true, enabled: _includeMeal)),
+            Expanded(child: _inputField('식대 (월)', _mealPayCtrl, isNumber: true, enabled: _includeMeal, hint: '예) 200,000')),
             const SizedBox(width: 8),
             _buildSwitch('포함', _includeMeal, (v) => setState(() => _includeMeal = v)),
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _inputField('고정OT (월)', _fixedOtCtrl, isNumber: true, enabled: _includeFixedOt)),
+            Expanded(child: _inputField('고정OT (월)', _fixedOtCtrl, isNumber: true, enabled: _includeFixedOt, hint: '예) 140,000')),
             const SizedBox(width: 8),
             _buildSwitch('포함', _includeFixedOt, (v) => setState(() => _includeFixedOt = v)),
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _inputField('기타 수당 (월)', _etcPayCtrl, isNumber: true, enabled: _includeEtcPay)),
+            Expanded(child: _inputField('기타 수당 (월)', _etcPayCtrl, isNumber: true, enabled: _includeEtcPay, hint: '예) 50,000')),
             const SizedBox(width: 8),
             _buildSwitch('포함', _includeEtcPay, (v) => setState(() => _includeEtcPay = v)),
           ]),
@@ -472,7 +472,7 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
     );
   }
 
-  Widget _inputField(String label, TextEditingController ctrl, {bool isNumber = false, bool enabled = true}) {
+  Widget _inputField(String label, TextEditingController ctrl, {bool isNumber = false, bool enabled = true, String? hint}) {
     return Opacity(
       opacity: enabled ? 1.0 : 0.4,
       child: TextField(
@@ -483,6 +483,8 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
         decoration: InputDecoration(
           labelText: label,
           labelStyle: TextStyle(color: VerifyTheme.textSecondary, fontSize: 13),
+          hintText: hint,
+          hintStyle: TextStyle(color: VerifyTheme.textSecondary.withValues(alpha: 0.4)),
           filled: true,
           fillColor: VerifyTheme.bgCard,
           border: OutlineInputBorder(
