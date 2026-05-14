@@ -415,15 +415,22 @@ class AnnualLeaveCalculator {
       guaranteed += manualAdjustment;
       guaranteed += initialAdjustment;
 
-      return AnnualLeaveSummary(
-        totalGenerated: guaranteed,
-        used: usedAnnualLeave,
-        remaining: guaranteed - usedAnnualLeave,
-        calculationBasis: [
-          "5인 미만 사업장 (설정/추정): 신규 연차 발생 대상 아님",
-          "노무 참고용: 과거 사용 연차 및 수동 조정분은 이력 보존"
-        ],
-      );
+      if (!isVirtual) {
+        return AnnualLeaveSummary(
+          totalGenerated: guaranteed,
+          used: usedAnnualLeave,
+          remaining: guaranteed - usedAnnualLeave,
+          calculationBasis: [
+            "5인 미만 사업장 (설정/추정): 신규 연차 발생 대상 아님",
+            "노무 참고용: 과거 사용 연차 및 수동 조정분은 이력 보존"
+          ],
+        );
+      } else {
+        // [가상데이터 전용] 5인 미만 전환 시 잔여 연차가 0으로 증발하지 않고
+        // 과거 5인 이상 시절에 이미 부여된 연차가 보존되는 정책을 시연하기 위해,
+        // 예외적으로 현재 정산 시점까지의 연차 발생 계산을 허용합니다.
+        basis.add("💡 [연차 보존 정책] 5인 미만 전환 전(과거 5인 이상 시절)에 이미 부여된 연차 이력은 소멸되지 않고 '최소 보장 연차'로 보존됩니다.");
+      }
     }
 
     // [수정/확인] 초단시간 근로자(주 15시간 미만) 연차 발생 제외 (근로기준법 제18조 제3항)

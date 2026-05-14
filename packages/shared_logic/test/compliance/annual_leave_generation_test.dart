@@ -213,7 +213,7 @@ void main() {
         usedAnnualLeave: 0,
         weeklyHoursPure: 40,
         hourlyRate: hourlyRate,
-        isVirtual: true,
+        isVirtual: false,
       );
 
       expect(summary.totalGenerated, 0,
