@@ -308,6 +308,13 @@ class _ContractPageState extends State<ContractPage> {
         final worker = widget.worker;
         final prescribedHoursPerDay = (worker.weeklyHours / (worker.workDays.isEmpty ? 1 : worker.workDays.length)).toStringAsFixed(1);
 
+        Map<String, dynamic>? snapData;
+        if (doc.dataJson != null) {
+          try {
+            snapData = jsonDecode(doc.dataJson!);
+          } catch (_) {}
+        }
+
         return Scaffold(
           backgroundColor: const Color(0xFFF2F2F7),
           appBar: AppBar(
@@ -318,27 +325,31 @@ class _ContractPageState extends State<ContractPage> {
             padding: const EdgeInsets.all(16),
             children: [
               _buildContractSection('사업장 정보', [
-                _buildContractRow('상호명', _readonlyValue(store?.storeName ?? '-')),
-                _buildContractRow('사업장 주소', _readonlyValue(store?.address ?? '-')),
-                _buildContractRow('대표자', _readonlyValue(store?.ownerName ?? '-')),
-                _buildContractRow('연락처', _readonlyValue(store?.phone ?? '-')),
+                _buildContractRow('상호명', _readonlyValue(snapData?['storeName']?.toString() ?? store?.storeName ?? '-')),
+                _buildContractRow('사업장 주소', _readonlyValue(snapData?['storeAddress']?.toString() ?? store?.address ?? '-')),
+                _buildContractRow('대표자', _readonlyValue(snapData?['ownerName']?.toString() ?? store?.ownerName ?? '-')),
+                _buildContractRow('연락처', _readonlyValue(snapData?['storePhone']?.toString() ?? store?.phone ?? '-')),
               ]),
               _buildContractSection('근로자 정보', [
-                _buildContractRow('성명', _readonlyValue(worker.name)),
-                _buildContractRow('연락처', _readonlyValue(worker.phone)),
+                _buildContractRow('성명', _readonlyValue(snapData?['workerName']?.toString() ?? worker.name)),
+                _buildContractRow('연락처', _readonlyValue(snapData?['workerPhone']?.toString() ?? worker.phone)),
                 _buildContractRow('생년월일', _readonlyValue(worker.birthDate)),
               ]),
               _buildContractSection('계약 기간', [
-                _buildContractRow('입사일', _readonlyValue(worker.startDate)),
-                _buildContractRow('계약 종료일', _readonlyValue(worker.endDate ?? '기간의 정함이 없음')),
+                _buildContractRow('입사일', _readonlyValue(snapData?['startDate']?.toString() ?? worker.startDate)),
+                _buildContractRow('계약 종료일', _readonlyValue(snapData?['endDate']?.toString() ?? worker.endDate ?? '기간의 정함이 없음')),
               ]),
               _buildContractSection('근무 조건', [
-                _buildContractRow('근무 장소', _readonlyValue(store?.address ?? '-')),
+                _buildContractRow('근무 장소', _readonlyValue(snapData?['storeAddress']?.toString() ?? store?.address ?? '-')),
                 _buildContractRow('소정근로시간', _readonlyValue('$prescribedHoursPerDay시간')),
-                _buildContractRow('근무 요일', _readonlyValue(_formatWorkDays(worker.workDays))),
-                _buildContractRow('주휴일', _readonlyValue(_weeklyHolidayText(worker))),
-                _buildContractRow('출퇴근 시간', _readonlyValue(_contractCommuteTimeText(worker))),
-                _buildContractRow('휴게 시간', _breakTimeContractValue(worker)),
+                _buildContractRow('근무 요일', _readonlyValue(snapData?['workDaysInfo']?.toString() ?? _formatWorkDays(worker.workDays))),
+                _buildContractRow('주휴일', _readonlyValue(snapData?['weeklyHoliday']?.toString() ?? _weeklyHolidayText(worker))),
+                _buildContractRow('출퇴근 시간', _readonlyValue(snapData != null && snapData['startTime'] != null && snapData['endTime'] != null
+                    ? '${snapData['startTime']}~${snapData['endTime']}'
+                    : _contractCommuteTimeText(worker))),
+                _buildContractRow('휴게 시간', snapData != null && snapData['breakStart'] != null && snapData['breakEnd'] != null
+                    ? _readonlyValue('${snapData['breakStart']}~${snapData['breakEnd']}')
+                    : _breakTimeContractValue(worker)),
               ]),
               _buildContractSection('임금', (() {
                 if (worker.wageType == 'monthly') {
@@ -482,14 +493,14 @@ class _ContractPageState extends State<ContractPage> {
                         ),
                       ),
                     ),
-                    _buildContractRow('임금 지급일', _buildEditablePayDay(doc)),
+                    _buildContractRow('임금 지급일', _buildEditablePayDay(doc, snapData)),
                   ];
                 } else {
                   return <Widget>[
                     _buildContractRow('급여 형태', _readonlyValue('시급제')),
                     _buildContractRow('시급', _readonlyValue(
                         '${_formatContractMoney(worker.hourlyWage.round())}원')),
-                    _buildContractRow('임금 지급일', _buildEditablePayDay(doc)),
+                    _buildContractRow('임금 지급일', _buildEditablePayDay(doc, snapData)),
                   ];
                 }
               })()),
@@ -630,7 +641,7 @@ class _ContractPageState extends State<ContractPage> {
     );
   }
 
-  Widget _buildEditablePayDay(LaborDocument doc) {
+  Widget _buildEditablePayDay(LaborDocument doc, Map<String, dynamic>? snapData) {
     if (doc.status == 'draft' || doc.status == 'ready') {
       return Container(
         height: 32,
@@ -661,7 +672,8 @@ class _ContractPageState extends State<ContractPage> {
         ),
       );
     } else {
-      return _readonlyValue('매월 $_wagePaymentDay일');
+      final String snapPayDay = snapData?['wagePaymentDay']?.toString() ?? '$_wagePaymentDay';
+      return _readonlyValue('매월 $snapPayDay일');
     }
   }
 
