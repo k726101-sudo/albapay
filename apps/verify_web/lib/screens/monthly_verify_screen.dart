@@ -34,6 +34,11 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
   List<int> _scheduledDays = [1, 2, 3, 4, 5];
   bool _isFiveOrMore = true;
 
+  // ─── 월급 구성 스위치 ───
+  bool _includeMeal = true;
+  bool _includeFixedOt = true;
+  bool _includeExtraWork = false;
+
   // ─── 추가 근로시간 ───
   final _extraOtHoursCtrl = TextEditingController(text: '0');
   final _nightHoursCtrl = TextEditingController(text: '0');
@@ -128,13 +133,13 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
     }
 
     final actualBase = baseSalary * proRataRatio;
-    final actualMeal = mealPay * proRataRatio;
-    final actualFixedOt = fixedOtPay * proRataRatio;
+    final actualMeal = _includeMeal ? mealPay * proRataRatio : 0.0;
+    final actualFixedOt = _includeFixedOt ? fixedOtPay * proRataRatio : 0.0;
     final totalMonthly = actualBase + actualMeal + actualFixedOt;
 
     // 추가 가산수당 (고정OT 초과분 + 야간 + 휴일)
     double extraPremium = 0;
-    if (_isFiveOrMore) {
+    if (_isFiveOrMore && _includeExtraWork) {
       extraPremium = (extraOtHours * conservativeHourly * 0.5) +
           (nightHours * conservativeHourly * 0.5) +
           (holidayHours * conservativeHourly * 0.5);
@@ -298,17 +303,22 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
 
             const Text('월급 구성', style: TextStyle(fontWeight: FontWeight.w600, color: VerifyTheme.accentSecondary)),
             const SizedBox(height: 12),
+            _buildField('통상임금 / 기본급 (원)', _baseSalaryCtrl),
+            const SizedBox(height: 12),
             _buildRow([
-              _buildField('기본급 (원)', _baseSalaryCtrl),
-              _buildField('식대 (원)', _mealPayCtrl),
+              _buildField('식대 (원)', _mealPayCtrl, enabled: _includeMeal),
+              _buildSwitchCompact('식대 포함', _includeMeal, (v) => setState(() => _includeMeal = v)),
             ]),
             const SizedBox(height: 12),
             _buildRow([
-              _buildField('고정연장수당 (원)', _fixedOtPayCtrl),
-              _buildField('고정연장시간 (h)', _fixedOtHoursCtrl),
+              _buildField('고정연장수당 (원)', _fixedOtPayCtrl, enabled: _includeFixedOt),
+              _buildSwitchCompact('고정OT 포함', _includeFixedOt, (v) => setState(() => _includeFixedOt = v)),
             ]),
             const SizedBox(height: 12),
-            _buildField('주 소정근로시간', _weeklyHoursCtrl),
+            _buildRow([
+              _buildField('고정연장시간 (h)', _fixedOtHoursCtrl, enabled: _includeFixedOt),
+              _buildField('주 소정근로시간', _weeklyHoursCtrl),
+            ]),
             const SizedBox(height: 12),
             _buildDateRow(),
             const SizedBox(height: 12),
@@ -318,14 +328,23 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
 
             const Divider(color: VerifyTheme.borderColor, height: 32),
 
-            const Text('추가 근로 (고정OT 초과분)', style: TextStyle(fontWeight: FontWeight.w600, color: VerifyTheme.accentSecondary)),
-            const SizedBox(height: 12),
-            _buildRow([
-              _buildField('추가 연장 (h)', _extraOtHoursCtrl),
-              _buildField('야간 (h)', _nightHoursCtrl),
-            ]),
-            const SizedBox(height: 12),
-            _buildField('휴일근로 (h)', _holidayHoursCtrl),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('추가 근로 (고정OT 초과분)', style: TextStyle(fontWeight: FontWeight.w600, color: VerifyTheme.accentSecondary)),
+                ),
+                _buildSwitchCompact('사용', _includeExtraWork, (v) => setState(() => _includeExtraWork = v)),
+              ],
+            ),
+            if (_includeExtraWork) ...[
+              const SizedBox(height: 12),
+              _buildRow([
+                _buildField('추가 연장 (h)', _extraOtHoursCtrl),
+                _buildField('야간 (h)', _nightHoursCtrl),
+              ]),
+              const SizedBox(height: 12),
+              _buildField('휴일근로 (h)', _holidayHoursCtrl),
+            ],
 
             const Divider(color: VerifyTheme.borderColor, height: 32),
 
@@ -425,13 +444,17 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
     );
   }
 
-  Widget _buildField(String label, TextEditingController ctrl) {
-    return TextField(
-      controller: ctrl,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))],
-      decoration: InputDecoration(labelText: label, isDense: true),
-      style: const TextStyle(color: VerifyTheme.textPrimary),
+  Widget _buildField(String label, TextEditingController ctrl, {bool enabled = true}) {
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.4,
+      child: TextField(
+        controller: ctrl,
+        enabled: enabled,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))],
+        decoration: InputDecoration(labelText: label, isDense: true),
+        style: const TextStyle(color: VerifyTheme.textPrimary),
+      ),
     );
   }
 
@@ -516,6 +539,27 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
         const SizedBox(width: 4),
         Switch(value: value, onChanged: onChanged, activeColor: VerifyTheme.accentPrimary),
       ],
+    );
+  }
+  Widget _buildSwitchCompact(String label, bool value, ValueChanged<bool> onChanged) {
+    return SizedBox(
+      width: 120,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: TextStyle(
+            color: value ? VerifyTheme.accentPrimary : VerifyTheme.textSecondary,
+            fontSize: 11,
+            fontWeight: value ? FontWeight.w600 : FontWeight.normal,
+          )),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: VerifyTheme.accentPrimary,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
     );
   }
 }
