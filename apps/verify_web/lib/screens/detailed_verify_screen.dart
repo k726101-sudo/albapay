@@ -237,10 +237,27 @@ class _DetailedVerifyScreenState extends State<DetailedVerifyScreen> {
           rows.add(_ParsedRow(date: d, clockIn: clockIn, clockOut: clockOut, raw: '스케줄'));
         }
 
-        // 결근 일수 제거 (마지막 근무일부터)
-        final absentDays = int.tryParse(_absentDaysCtrl.text) ?? 0;
-        if (absentDays > 0 && absentDays < rows.length) {
-          rows.removeRange(rows.length - absentDays, rows.length);
+        // 결근 주수 → 해당 주에서 1일 제거 (만근 실패 → 주휴수당 차감)
+        final absentWeeks = int.tryParse(_absentDaysCtrl.text) ?? 0;
+        if (absentWeeks > 0 && rows.isNotEmpty) {
+          // 주 단위로 그룹핑 (ISO week number 기준)
+          final weekGroups = <int, List<int>>{}; // weekKey → row indices
+          for (var i = 0; i < rows.length; i++) {
+            final d = rows[i].date;
+            final weekKey = d.year * 100 + _isoWeekNumber(d);
+            weekGroups.putIfAbsent(weekKey, () => []).add(i);
+          }
+          // 마지막 주부터 1일씩 제거
+          final sortedWeeks = weekGroups.keys.toList()..sort((a, b) => b.compareTo(a));
+          final indicesToRemove = <int>[];
+          for (var w = 0; w < absentWeeks && w < sortedWeeks.length; w++) {
+            final indices = weekGroups[sortedWeeks[w]]!;
+            indicesToRemove.add(indices.last); // 해당 주 마지막 근무일 제거
+          }
+          indicesToRemove.sort((a, b) => b.compareTo(a)); // 역순 제거
+          for (final idx in indicesToRemove) {
+            rows.removeAt(idx);
+          }
         }
 
         // 연장근로 반영 (근무일에 균등 분배)
@@ -428,7 +445,7 @@ class _DetailedVerifyScreenState extends State<DetailedVerifyScreen> {
           const SizedBox(width: 12),
           Expanded(child: _inputField('야간근로 (h)', _nightHoursCtrl, isNumber: true)),
           const SizedBox(width: 12),
-          Expanded(child: _inputField('결근 일수', _absentDaysCtrl, isNumber: true)),
+          Expanded(child: _inputField('결근 주수', _absentDaysCtrl, isNumber: true)),
         ]),
         const SizedBox(height: 12),
 
@@ -748,4 +765,11 @@ class _ParsedRow {
     required this.clockOut,
     required this.raw,
   });
+}
+
+/// ISO 8601 주차 번호 계산
+int _isoWeekNumber(DateTime date) {
+  final dayOfYear = date.difference(DateTime(date.year, 1, 1)).inDays;
+  final wday = date.weekday; // 1=Mon ... 7=Sun
+  return ((dayOfYear - wday + 10) / 7).floor();
 }
