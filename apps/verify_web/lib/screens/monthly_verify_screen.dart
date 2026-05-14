@@ -39,11 +39,9 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
   bool _includeFixedOt = true;
   bool _includeExtraWork = false;
 
-  // ─── 추가 근로시간 ───
-  final _extraOtHoursCtrl = TextEditingController(text: '0');
-  final _nightHoursCtrl = TextEditingController(text: '0');
-  final _holidayHoursCtrl = TextEditingController(text: '0');
-  bool _laborDayWorked = false;
+  // ─── 기타 수당 ───
+  final _etcPayCtrl = TextEditingController(text: '0');
+  final _etcPayLabelCtrl = TextEditingController(text: '기타수당');
 
   // ─── 공제 ───
   bool _apply33 = false;
@@ -64,9 +62,8 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
     _fixedOtPayCtrl.dispose();
     _fixedOtHoursCtrl.dispose();
     _weeklyHoursCtrl.dispose();
-    _extraOtHoursCtrl.dispose();
-    _nightHoursCtrl.dispose();
-    _holidayHoursCtrl.dispose();
+    _etcPayCtrl.dispose();
+    _etcPayLabelCtrl.dispose();
     super.dispose();
   }
 
@@ -99,9 +96,6 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
     final fixedOtPay = double.tryParse(_fixedOtPayCtrl.text) ?? 0;
     final fixedOtHours = double.tryParse(_fixedOtHoursCtrl.text) ?? 0;
     final weeklyHours = double.tryParse(_weeklyHoursCtrl.text) ?? 0;
-    final extraOtHours = double.tryParse(_extraOtHoursCtrl.text) ?? 0;
-    final nightHours = double.tryParse(_nightHoursCtrl.text) ?? 0;
-    final holidayHours = double.tryParse(_holidayHoursCtrl.text) ?? 0;
 
     // S_Ref = 4.345 × (주 소정근로 + 주휴시간)
     final weeklyHolidayHours = (weeklyHours / 40) * 8;
@@ -137,15 +131,10 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
     final actualFixedOt = _includeFixedOt ? fixedOtPay * proRataRatio : 0.0;
     final totalMonthly = actualBase + actualMeal + actualFixedOt;
 
-    // 추가 가산수당 (고정OT 초과분 + 야간 + 휴일)
-    double extraPremium = 0;
-    if (_isFiveOrMore && _includeExtraWork) {
-      extraPremium = (extraOtHours * conservativeHourly * 0.5) +
-          (nightHours * conservativeHourly * 0.5) +
-          (holidayHours * conservativeHourly * 0.5);
-    }
+    // 기타 수당
+    final etcPay = _includeExtraWork ? (double.tryParse(_etcPayCtrl.text) ?? 0) : 0.0;
 
-    final totalPay = totalMonthly + extraPremium;
+    final totalPay = totalMonthly + etcPay;
 
     // 공제
     final taxFreeMeal = _mealTaxExempt ? (actualMeal > 200000 ? 200000.0 : actualMeal) : 0.0;
@@ -173,14 +162,14 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
       _result = PayrollCalculationResult(
         basePay: actualBase,
         breakPay: 0,
-        premiumPay: extraPremium,
+        premiumPay: etcPay,
         weeklyHolidayPay: 0,
         otherAllowancePay: 0,
         totalPay: totalPay,
         pureLaborHours: 0,
         paidBreakHours: 0,
         stayHours: 0,
-        premiumHours: extraOtHours + nightHours + holidayHours,
+        premiumHours: 0,
         needsBreakSeparationGuide: false,
         isWeeklyHolidayEligible: true,
         hasSubstitutionRisk: false,
@@ -331,19 +320,17 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
             Row(
               children: [
                 const Expanded(
-                  child: Text('추가 근로 (고정OT 초과분)', style: TextStyle(fontWeight: FontWeight.w600, color: VerifyTheme.accentSecondary)),
+                  child: Text('기타(이외) 수당', style: TextStyle(fontWeight: FontWeight.w600, color: VerifyTheme.accentSecondary)),
                 ),
-                _buildSwitchCompact('사용', _includeExtraWork, (v) => setState(() => _includeExtraWork = v)),
+                _buildSwitchCompact('포함', _includeExtraWork, (v) => setState(() => _includeExtraWork = v)),
               ],
             ),
             if (_includeExtraWork) ...[
               const SizedBox(height: 12),
               _buildRow([
-                _buildField('추가 연장 (h)', _extraOtHoursCtrl),
-                _buildField('야간 (h)', _nightHoursCtrl),
+                _buildField('수당명', _etcPayLabelCtrl, isText: true),
+                _buildField('금액 (원)', _etcPayCtrl),
               ]),
-              const SizedBox(height: 12),
-              _buildField('휴일근로 (h)', _holidayHoursCtrl),
             ],
 
             const Divider(color: VerifyTheme.borderColor, height: 32),
@@ -444,14 +431,14 @@ class _MonthlyVerifyScreenState extends State<MonthlyVerifyScreen> {
     );
   }
 
-  Widget _buildField(String label, TextEditingController ctrl, {bool enabled = true}) {
+  Widget _buildField(String label, TextEditingController ctrl, {bool enabled = true, bool isText = false}) {
     return Opacity(
       opacity: enabled ? 1.0 : 0.4,
       child: TextField(
         controller: ctrl,
         enabled: enabled,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))],
+        keyboardType: isText ? TextInputType.text : const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: isText ? null : [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))],
         decoration: InputDecoration(labelText: label, isDense: true),
         style: const TextStyle(color: VerifyTheme.textPrimary),
       ),
