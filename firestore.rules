@@ -386,5 +386,19 @@ service cloud.firestore {
       allow read: if isSignedIn() && isStoreMember(resource.data.get('storeId', ''));
       allow write: if isSignedIn() && isStoreOwner(resource.data.get('storeId', ''));
     }
+
+    // --- 11. 급여 검증기 접근코드 (verify_web) ---
+    // 읽기: 누구나 (비로그인) — 접근코드 확인용
+    // 쓰기: 로그인 사용자만 — 관리자 패널에서 코드 CRUD
+    match /verify_access/{codeId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+
+      // 사용 로그 하위 컬렉션
+      match /usage_logs/{logId} {
+        allow read: if isSignedIn();
+        allow create: if true; // 비로그인 사용자도 접속 로그 기록
+      }
+    }
   }
 }
