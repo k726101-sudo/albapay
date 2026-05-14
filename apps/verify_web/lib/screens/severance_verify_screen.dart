@@ -32,7 +32,11 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
   final _monthlySalaryCtrl = TextEditingController(text: '0');
   final _mealPayCtrl = TextEditingController(text: '0');
   final _fixedOtCtrl = TextEditingController(text: '0');
-  bool _includeMealInOrdinary = true;
+  bool _includeMeal = true;
+  bool _includeFixedOt = true;
+  bool _includeEtcPay = false;
+  final _etcPayCtrl = TextEditingController(text: '0');
+  final _etcPayLabelCtrl = TextEditingController(text: '기타수당');
 
   // 수동 평균임금
   final _manualAvgWageCtrl = TextEditingController(text: '0');
@@ -53,6 +57,8 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
     _mealPayCtrl.dispose();
     _fixedOtCtrl.dispose();
     _manualAvgWageCtrl.dispose();
+    _etcPayCtrl.dispose();
+    _etcPayLabelCtrl.dispose();
     super.dispose();
   }
 
@@ -71,7 +77,7 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
     _mealPayCtrl.text = (preset['mealPay'] ?? 0).toString();
     _fixedOtCtrl.text = (preset['fixedOtPay'] ?? 0).toString();
     _manualAvgWageCtrl.text = (preset['manualAvgWage'] ?? 0).toString();
-    _includeMealInOrdinary = preset['includeMealInOrdinary'] ?? true;
+    _includeMeal = preset['includeMealInOrdinary'] ?? true;
     setState(() => _result = null);
   }
 
@@ -99,9 +105,10 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
         manualAverageDailyWage: manualAvg > 0 ? manualAvg : null,
         wageType: _wageType,
         monthlyWage: double.tryParse(_monthlySalaryCtrl.text) ?? 0,
-        mealAllowance: double.tryParse(_mealPayCtrl.text) ?? 0,
-        fixedOvertimePay: double.tryParse(_fixedOtCtrl.text) ?? 0,
-        includeMealInOrdinary: _includeMealInOrdinary,
+        mealAllowance: _includeMeal ? (double.tryParse(_mealPayCtrl.text) ?? 0) : 0,
+        fixedOvertimePay: _includeFixedOt ? (double.tryParse(_fixedOtCtrl.text) ?? 0) : 0,
+        includeMealInOrdinary: _includeMeal,
+        otherAllowances: _includeEtcPay ? [double.tryParse(_etcPayCtrl.text) ?? 0] : [],
       );
 
       setState(() => _result = result);
@@ -186,7 +193,7 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
 
         // 5인이상 토글
         Row(children: [
-          _toggleChip('5인 이상', _isFiveOrMore, (v) => setState(() => _isFiveOrMore = v)),
+          _buildSwitch('5인 이상', _isFiveOrMore, (v) => setState(() => _isFiveOrMore = v)),
         ]),
 
         const Divider(height: 32, color: VerifyTheme.borderColor),
@@ -215,17 +222,24 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
 
         if (_wageType == 'monthly') ...[
           const SizedBox(height: 12),
+          _inputField('통상임금 / 기본급 (월)', _monthlySalaryCtrl, isNumber: true),
+          const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _inputField('기본급 (월)', _monthlySalaryCtrl, isNumber: true)),
-            const SizedBox(width: 12),
-            Expanded(child: _inputField('식대 (월)', _mealPayCtrl, isNumber: true)),
+            Expanded(child: _inputField('식대 (월)', _mealPayCtrl, isNumber: true, enabled: _includeMeal)),
+            const SizedBox(width: 8),
+            _buildSwitch('포함', _includeMeal, (v) => setState(() => _includeMeal = v)),
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _inputField('고정OT (월)', _fixedOtCtrl, isNumber: true)),
-            const SizedBox(width: 12),
-            Expanded(child: _toggleChip('식대→통상임금 포함', _includeMealInOrdinary,
-                (v) => setState(() => _includeMealInOrdinary = v))),
+            Expanded(child: _inputField('고정OT (월)', _fixedOtCtrl, isNumber: true, enabled: _includeFixedOt)),
+            const SizedBox(width: 8),
+            _buildSwitch('포함', _includeFixedOt, (v) => setState(() => _includeFixedOt = v)),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: _inputField('기타 수당 (월)', _etcPayCtrl, isNumber: true, enabled: _includeEtcPay)),
+            const SizedBox(width: 8),
+            _buildSwitch('포함', _includeEtcPay, (v) => setState(() => _includeEtcPay = v)),
           ]),
         ],
 
@@ -458,23 +472,27 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
     );
   }
 
-  Widget _inputField(String label, TextEditingController ctrl, {bool isNumber = false}) {
-    return TextField(
-      controller: ctrl,
-      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-      style: const TextStyle(color: Colors.white),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: VerifyTheme.textSecondary, fontSize: 13),
-        filled: true,
-        fillColor: VerifyTheme.bgCard,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: VerifyTheme.borderColor),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: VerifyTheme.borderColor),
+  Widget _inputField(String label, TextEditingController ctrl, {bool isNumber = false, bool enabled = true}) {
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.4,
+      child: TextField(
+        controller: ctrl,
+        enabled: enabled,
+        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: TextStyle(color: VerifyTheme.textSecondary, fontSize: 13),
+          filled: true,
+          fillColor: VerifyTheme.bgCard,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: VerifyTheme.borderColor),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: VerifyTheme.borderColor),
+          ),
         ),
       ),
     );
@@ -527,10 +545,14 @@ class _SeveranceVerifyScreenState extends State<SeveranceVerifyScreen> {
     );
   }
 
-  Widget _toggleChip(String label, bool value, ValueChanged<bool> onChanged) {
+  Widget _buildSwitch(String label, bool value, ValueChanged<bool> onChanged) {
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      Text(label, style: TextStyle(color: VerifyTheme.textSecondary, fontSize: 13)),
-      const SizedBox(width: 8),
+      Text(label, style: TextStyle(
+        color: value ? VerifyTheme.accentPrimary : VerifyTheme.textSecondary,
+        fontSize: 13,
+        fontWeight: value ? FontWeight.w600 : FontWeight.normal,
+      )),
+      const SizedBox(width: 4),
       Switch(value: value, onChanged: onChanged, activeColor: VerifyTheme.accentPrimary),
     ]);
   }
