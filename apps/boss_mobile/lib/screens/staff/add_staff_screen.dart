@@ -132,6 +132,14 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
   bool _sectionAllowanceExpanded = true; // Block 3: 수당 및 절세
   bool _sectionVerifyExpanded = true; // Block 4: 최종 검증
 
+  // ── 토스형 하이브리드 UX ──
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+  static const int _totalPages = 5; // 이름/연락처/급여/스케줄/세부옵션
+  final FocusNode _pageFocus1 = FocusNode();
+  final FocusNode _pageFocus2 = FocusNode();
+  final FocusNode _pageFocus4 = FocusNode();
+
   // ── Auto-Wizard 상태 ──
   final _targetSalaryController = TextEditingController();
   bool _wizardApplied = false;
@@ -1030,6 +1038,11 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
   String _formatDateKo(DateTime? date) {
     if (date == null) return '선택 안 됨';
     return DateFormat('yyyy년 MM월 dd일', 'ko_KR').format(date);
+  }
+
+  String _formatOptionalDateKo(DateTime? date) {
+    if (date == null) return '미정';
+    return _formatDateKo(date);
   }
 
   int _calcAge(DateTime birthDate) {
@@ -2193,1322 +2206,423 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
-      appBar: AppBar(
-        title: Text(widget.initialWorker == null ? '신규 직원 등록' : '직원 정보 수정'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 160),
+  // ── 페이지 이동 ──
+  void _nextPage() {
+    FocusScope.of(context).unfocus();
+    if (_currentPage < _totalPages - 1) {
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (!mounted) return;
+        switch (_currentPage + 1) {
+          case 0: _pageFocus1.requestFocus(); break;
+          case 1: _pageFocus2.requestFocus(); break;
+          case 3: _pageFocus4.requestFocus(); break;
+        }
+      });
+    }
+  }
+
+  void _prevPage() {
+    FocusScope.of(context).unfocus();
+    if (_currentPage > 0) {
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  bool _isCurrentPageValid() {
+    switch (_currentPage) {
+      case 0: return _nameController.text.trim().isNotEmpty;
+      case 1:
+        final d = _phoneController.text.replaceAll(RegExp(r'[^0-9]'), '');
+        return d.length >= 10;
+      case 2: // 급여: 시급 or 월급 입력됐으면 OK
+        if (_wageType == WageType.hourly) {
+          return (int.tryParse(_wageController.text.replaceAll(',', '')) ?? 0) > 0;
+        } else {
+          return (int.tryParse(_monthlyWageController.text.replaceAll(',', '')) ?? 0) > 0;
+        }
+      case 3: return true; // 스케줄: 건너뛰기 허용
+      case 4: return true; // 세부옵션: 건너뛰기 허용
+      default: return false;
+    }
+  }
+
+  Widget _buildPageTitle(String title, {String? subtitle}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, height: 1.35),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 8),
+          Text(subtitle, style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+        ],
+        const SizedBox(height: 28),
+      ],
+    );
+  }
+
+  // ── Page 0: 이름 ──
+  Widget _buildPage0Name() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── 신규 직원 필수 입력 안내 배너 ──
-          if (widget.initialWorker == null && !_hideBanner)
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1565C0), Color(0xFF1E88E5)],
-                ),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF1565C0).withValues(alpha: 0.25),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+          _buildPageTitle('직원의 이름을\n알려주세요.'),
+          TextField(
+            controller: _nameController,
+            focusNode: _pageFocus1,
+            style: const TextStyle(fontSize: 22),
+            decoration: const InputDecoration(
+              hintText: '실명 입력',
+              border: UnderlineInputBorder(),
+            ),
+            textInputAction: TextInputAction.next,
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) { if (_isCurrentPageValid()) _nextPage(); },
+          ),
+          const SizedBox(height: 24),
+          // 직원 유형 칩
+          Wrap(
+            spacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('일반직'),
+                selected: _employeeType == _EmployeeType.normal,
+                selectedColor: const Color(0xFF1a6ebd),
+                labelStyle: TextStyle(color: _employeeType == _EmployeeType.normal ? Colors.white : Colors.black54),
+                onSelected: (_) => _onWorkerTypeChanged(_EmployeeType.normal),
               ),
-              child: Stack(
+              ChoiceChip(
+                label: const Text('파견직'),
+                selected: _employeeType == _EmployeeType.dispatched,
+                selectedColor: const Color(0xFF1a6ebd),
+                labelStyle: TextStyle(color: _employeeType == _EmployeeType.dispatched ? Colors.white : Colors.black54),
+                onSelected: (_) => _onWorkerTypeChanged(_EmployeeType.dispatched),
+              ),
+              ChoiceChip(
+                label: const Text('외국인'),
+                selected: _employeeType == _EmployeeType.foreigner,
+                selectedColor: const Color(0xFF1a6ebd),
+                labelStyle: TextStyle(color: _employeeType == _EmployeeType.foreigner ? Colors.white : Colors.black54),
+                onSelected: (_) => _onWorkerTypeChanged(_EmployeeType.foreigner),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Page 1: 연락처 ──
+  Widget _buildPage1Phone() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPageTitle('연락처를\n입력해주세요.'),
+          TextField(
+            controller: _phoneController,
+            focusNode: _pageFocus2,
+            keyboardType: TextInputType.phone,
+            style: const TextStyle(fontSize: 22),
+            decoration: const InputDecoration(
+              hintText: '010-0000-0000',
+              border: UnderlineInputBorder(),
+            ),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9-]')),
+              LengthLimitingTextInputFormatter(13),
+            ],
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) { if (_isCurrentPageValid()) _nextPage(); },
+          ),
+          const SizedBox(height: 16),
+          // 입사일 선택
+          GestureDetector(
+            onTap: () => _selectDate(context, _hireDate, (d) => setState(() => _hireDate = d)),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
                 children: [
-                  const Column(
+                  const Icon(Icons.event_outlined, color: Colors.grey, size: 20),
+                  const SizedBox(width: 10),
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text('\ud83d\udcdd', style: TextStyle(fontSize: 22)),
-                          SizedBox(width: 8),
-                          Text(
-                            '\uc9c1\uc6d0 \uc815\ubcf4\ub97c \uc785\ub825\ud574 \uc8fc\uc138\uc694!',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
+                      const Text('입사일', style: TextStyle(fontSize: 12, color: Colors.grey)),
                       Text(
-                        '① 직원 정보를 꼼꼼히 입력할수록 모든 노무서류(계약서, 명부 등)에 자동 반영되어 사장님이 편해져요!\n'
-                        '② 당장 알 수 없는 필수 외 정보는 나중에 수정할 수 있어요.\n'
-                        '③ 입력 후 하단의 [저장 및 노무서류 작성] 버튼을 눌러주세요 👇',
+                        _formatDateKo(_hireDate),
                         style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white70,
-                          height: 1.6,
+                          fontSize: 16,
+                          color: _hireDate != null ? Colors.black87 : Colors.grey.shade400,
                         ),
                       ),
                     ],
                   ),
-                  Positioned(
-                    top: -12,
-                    right: -12,
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.close,
-                        color: Colors.white70,
-                        size: 20,
-                      ),
-                      onPressed: () async {
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.setBool('hide_add_staff_banner', true);
-                        if (mounted) setState(() => _hideBanner = true);
-                      },
-                      tooltip: '다시 보지 않기',
-                    ),
-                  ),
                 ],
               ),
             ),
-          _buildSection(
-            '필수 정보',
-            Icons.person_outline,
-            const Color(0xFF1a6ebd),
-            _section1Expanded,
-            () => setState(() => _section1Expanded = !_section1Expanded),
-            [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: 8,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('일반직'),
-                            selected: _employeeType == _EmployeeType.normal,
-                            selectedColor: const Color(0xFF1a6ebd),
-                            backgroundColor: const Color(0xFFF2F2F7),
-                            labelStyle: TextStyle(
-                              color: _employeeType == _EmployeeType.normal
-                                  ? Colors.white
-                                  : Colors.black54,
-                            ),
-                            onSelected: (_) =>
-                                _onWorkerTypeChanged(_EmployeeType.normal),
-                          ),
-                          ChoiceChip(
-                            label: const Text('파견직'),
-                            selected: _employeeType == _EmployeeType.dispatched,
-                            selectedColor: const Color(0xFF1a6ebd),
-                            backgroundColor: const Color(0xFFF2F2F7),
-                            labelStyle: TextStyle(
-                              color: _employeeType == _EmployeeType.dispatched
-                                  ? Colors.white
-                                  : Colors.black54,
-                            ),
-                            onSelected: (_) =>
-                                _onWorkerTypeChanged(_EmployeeType.dispatched),
-                          ),
-                          ChoiceChip(
-                            label: const Text('외국인'),
-                            selected: _employeeType == _EmployeeType.foreigner,
-                            selectedColor: const Color(0xFF1a6ebd),
-                            backgroundColor: const Color(0xFFF2F2F7),
-                            labelStyle: TextStyle(
-                              color: _employeeType == _EmployeeType.foreigner
-                                  ? Colors.white
-                                  : Colors.black54,
-                            ),
-                            onSelected: (_) =>
-                                _onWorkerTypeChanged(_EmployeeType.foreigner),
-                          ),
-                        ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Page 2: 급여 ──
+  Widget _buildPage2Wage() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPageTitle('급여를\n설정해주세요.'),
+          // 시급/월급 선택 카드
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _wageType = WageType.hourly),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _wageType == WageType.hourly ? const Color(0xFF1a6ebd) : Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: _wageType == WageType.hourly ? const Color(0xFF1a6ebd) : Colors.grey.shade300,
+                        width: _wageType == WageType.hourly ? 2 : 1,
                       ),
                     ),
-                    AnimatedCrossFade(
-                      duration: const Duration(milliseconds: 300),
-                      crossFadeState: _isDispatch
-                          ? CrossFadeState.showSecond
-                          : CrossFadeState.showFirst,
-                      firstChild: const SizedBox.shrink(),
-                      secondChild: Container(
-                        margin: const EdgeInsets.fromLTRB(14, 8, 14, 4),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF3F0FF),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: const Color(0xFF8B5CF6),
-                            width: 0.5,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.info_outline,
-                                  color: Color(0xFF7C3AED),
-                                  size: 15,
-                                ),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  '파견근로자 안내',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF7C3AED),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            _buildDispatchGuideItem(
-                              '급여/4대보험',
-                              '파견업체에서 관리 및 납부\n별도 입력 불필요',
-                            ),
-                            const SizedBox(height: 4),
-                            _buildDispatchGuideItem(
-                              '근로계약서',
-                              '파견업체와 근로자 간 체결\n이 앱에서 작성 불필요',
-                            ),
-                            const SizedBox(height: 4),
-                            _buildDispatchGuideItem(
-                              '5인 판단',
-                              '상시 근로자 산정에서 제외\n(근로기준법 시행령 제7조의2)',
-                            ),
-                            const SizedBox(height: 4),
-                            _buildDispatchGuideItem(
-                              '보건증',
-                              '파견근로자도 보건증 필요\n만료일 관리는 동일하게 적용',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
+                    child: Column(
                       children: [
-                        Expanded(
-                          flex: 3,
-                          child: TextField(
-                            controller: _nameController,
-                            focusNode: _nameFocusNode,
-                            onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(
-                              labelText: '이름 *',
-                              hintText: '실명 입력',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            controller: _employeeIdController,
-                            onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(
-                              labelText: 'ID (선택)',
-                              hintText: '동명이인 구분용',
-                            ),
-                          ),
-                        ),
+                        Icon(Icons.access_time, color: _wageType == WageType.hourly ? Colors.white : Colors.grey),
+                        const SizedBox(height: 6),
+                        Text('시급제', style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _wageType == WageType.hourly ? Colors.white : Colors.black87,
+                        )),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _phoneController,
-                      focusNode: _phoneFocusNode,
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                        labelText: '연락처 *',
-                        hintText: '010-0000-0000',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _wageType = WageType.monthly),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _wageType == WageType.monthly ? const Color(0xFF1a6ebd) : Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: _wageType == WageType.monthly ? const Color(0xFF1a6ebd) : Colors.grey.shade300,
+                        width: _wageType == WageType.monthly ? 2 : 1,
                       ),
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[0-9-]')),
-                        LengthLimitingTextInputFormatter(13),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.calendar_month, color: _wageType == WageType.monthly ? Colors.white : Colors.grey),
+                        const SizedBox(height: 6),
+                        Text('월급제', style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _wageType == WageType.monthly ? Colors.white : Colors.black87,
+                        )),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    GestureDetector(
-                      onTap: () => _selectDate(
-                        context,
-                        _birthDate,
-                        (date) => setState(() {
-                          _birthDate = date;
-                          _checkMinor(date);
-                        }),
-                        isBirthDate: true,
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F5F5),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.cake_outlined,
-                              color: Color(0xFF888888),
-                              size: 18,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _formatDateKo(_birthDate),
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  color: _birthDate != null
-                                      ? const Color(0xFF1a1a2e)
-                                      : const Color(0xFFBBBBBB),
-                                ),
-                              ),
-                            ),
-                            if (_birthDate != null)
-                              Text(
-                                '만 ${_calcAge(_birthDate!)}세',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: _isMinor
-                                      ? const Color(0xFFE24B4A)
-                                      : const Color(0xFF888888),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    AnimatedCrossFade(
-                      duration: const Duration(milliseconds: 300),
-                      crossFadeState: _isMinor
-                          ? CrossFadeState.showSecond
-                          : CrossFadeState.showFirst,
-                      firstChild: const SizedBox.shrink(),
-                      secondChild: Container(
-                        margin: const EdgeInsets.only(top: 8),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFCEBEB),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: const Color(0xFFE24B4A),
-                            width: 0.5,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Row(
-                              children: [
-                                Icon(
-                                  Icons.warning_rounded,
-                                  color: Color(0xFFE24B4A),
-                                  size: 16,
-                                ),
-                                SizedBox(width: 6),
-                                Text(
-                                  '연소자 근로자 안내',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFFA32D2D),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            _buildMinorGuideItem(
-                              '친권자(부모님) 종이 동의서 필수 지참',
-                              '만 18세 미만 알바생은 부모님의 서면 동의서와 가족관계증명서가 법적으로 필수입니다. 앱 내 전자서명 대신, 반드시 부모님께 직접 종이로 사인을 받아 매장에 보관해 주세요.',
-                            ),
-                            const SizedBox(height: 6),
-                            _buildMinorGuideItem(
-                              '야간근로 제한',
-                              '오후 10시 ~ 오전 6시 야간근로 원칙 금지\n(고용노동부 인가 시 예외)',
-                            ),
-                            const SizedBox(height: 6),
-                            _buildMinorGuideItem(
-                              '휴일근로 제한',
-                              '휴일근로 원칙 금지\n(본인 동의 + 고용노동부 인가)',
-                            ),
-                            const SizedBox(height: 6),
-                            _buildMinorGuideItem(
-                              '근로시간',
-                              '1일 7시간, 주 35시간 초과 금지',
-                            ),
-                            const SizedBox(height: 10),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Text(
-                                '⚠️ 채용 체크리스트에서 친권자 동의서 필수 확인',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFFA32D2D),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    GestureDetector(
-                      onTap: () => _selectDate(
-                        context,
-                        _hireDate,
-                        (d) => setState(() => _hireDate = d),
-                      ),
-                      child: Container(
-                        key: _hireDateKey,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F5F5),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.event_outlined,
-                              color: Color(0xFF888888),
-                              size: 18,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '입사일 *',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF888888),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _formatDateKo(_hireDate),
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      color: _hireDate != null
-                                          ? const Color(0xFF1a1a2e)
-                                          : const Color(0xFFBBBBBB),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],
-            subtitle: _subtitleSection1(),
           ),
-          _isDispatch
-              ? _buildDispatchSection()
-              : _buildSection(
-                  '근무 조건',
-                  Icons.schedule_outlined,
-                  const Color(0xFF286b3a),
-                  _section2Expanded,
-                  () => setState(() => _section2Expanded = !_section2Expanded),
-                  [
-                    Padding(
-                      key: _workScheduleKey,
-                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          AnimatedCrossFade(
-                            crossFadeState: _isEditingWorkTime
-                                ? CrossFadeState.showSecond
-                                : CrossFadeState.showFirst,
-                            duration: const Duration(milliseconds: 250),
-                            firstChild: _workTimeSummaryCard(),
-                            secondChild: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: _weekdayOrder().map((day) {
-                                    final selected = _selectedDays.contains(
-                                      day,
-                                    );
-                                    return ChoiceChip(
-                                      label: Text(_weekdayLabel(day)),
-                                      selected: selected,
-                                      selectedColor: const Color(0xFF1a6ebd),
-                                      backgroundColor: const Color(0xFFF2F2F7),
-                                      labelStyle: TextStyle(
-                                        color: selected
-                                            ? Colors.white
-                                            : Colors.grey,
-                                      ),
-                                      labelPadding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                        vertical: 2,
-                                      ),
-                                      onSelected: (v) {
-                                        setState(() {
-                                          if (v) {
-                                            _selectedDays.add(day);
-                                            // 첫 선택일 때만 컨트롤러를 동기화합니다.
-                                            if (_selectedDays.length == 1) {
-                                              _bulkStartController.text =
-                                                  _workStartByDay[day] ??
-                                                  _bulkStartController.text;
-                                              _bulkEndController.text =
-                                                  _workEndByDay[day] ??
-                                                  _bulkEndController.text;
-                                            }
-                                          } else {
-                                            _selectedDays.remove(day);
-                                          }
-                                        });
-                                      },
-                                    );
-                                  }).toList(),
-                                ),
-                                const SizedBox(height: 14),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _bulkStartController,
-                                        readOnly: true,
-                                        onTap: () => _pickTimeForController(
-                                          _bulkStartController,
-                                        ),
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                        decoration: const InputDecoration(
-                                          labelText: '근무 시작(HH:mm)',
-                                          hintText: '17:00',
-                                          contentPadding: EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                            vertical: 18,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _bulkEndController,
-                                        readOnly: true,
-                                        onTap: () => _pickTimeForController(
-                                          _bulkEndController,
-                                        ),
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                        decoration: const InputDecoration(
-                                          labelText: '근무 종료(HH:mm)',
-                                          hintText: '21:30',
-                                          contentPadding: EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                            vertical: 18,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: FilledButton.icon(
-                                    onPressed: () {
-                                      if (_selectedDays.isEmpty) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('요일을 먼저 선택해 주세요.'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      final s = _bulkStartController.text
-                                          .trim();
-                                      final e = _bulkEndController.text.trim();
-                                      if (!_isHm(s) || !_isHm(e)) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              '시간은 HH:mm 형식으로 입력해 주세요.',
-                                            ),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      if (_durationMinutes(s, e) <= 0) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              '종료시간은 시작시간보다 뒤여야 합니다.',
-                                            ),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      if (_isMinor && _hasNightWork(s, e)) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              '연소자는 야간 근로(22:00~06:00)가 금지되어 있습니다. 시간을 다시 설정해 주세요.',
-                                            ),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      setState(() {
-                                        for (final day in _selectedDays) {
-                                          _workStartByDay[day] = s;
-                                          _workEndByDay[day] = e;
-                                          _contractedDays.add(day);
-                                        }
-                                        _workStartController.text = s;
-                                        _workEndController.text = e;
-                                      });
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            '✅ ${_selectedDays.length}개 요일에 $s~$e 적용 완료',
-                                          ),
-                                          backgroundColor: const Color(
-                                            0xFF286b3a,
-                                          ),
-                                          duration: const Duration(seconds: 2),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(
-                                      Icons.check_circle_outline_rounded,
-                                    ),
-                                    label: const Text('선택 요일에 일괄 적용'),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  '휴게시간',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                const SizedBox(height: 10),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    InputChip(
-                                      label: const Text('30분'),
-                                      selected:
-                                          _breakPreset ==
-                                          _BreakPreset.minutes30,
-                                      onSelected: (v) {
-                                        if (!v) return;
-                                        setState(
-                                          () => _breakPreset =
-                                              _BreakPreset.minutes30,
-                                        );
-                                      },
-                                    ),
-                                    InputChip(
-                                      label: const Text('60분'),
-                                      selected:
-                                          _breakPreset ==
-                                          _BreakPreset.minutes60,
-                                      onSelected: (v) {
-                                        if (!v) return;
-                                        setState(
-                                          () => _breakPreset =
-                                              _BreakPreset.minutes60,
-                                        );
-                                      },
-                                    ),
-                                    InputChip(
-                                      label: const Text('직접 입력'),
-                                      selected:
-                                          _breakPreset == _BreakPreset.custom,
-                                      onSelected: (v) {
-                                        if (!v) return;
-                                        setState(
-                                          () => _breakPreset =
-                                              _BreakPreset.custom,
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                if (_breakPreset == _BreakPreset.custom) ...[
-                                  const SizedBox(height: 10),
-                                  TextField(
-                                    controller: _breakMinutesController,
-                                    decoration: const InputDecoration(
-                                      labelText: '직접 입력(분)',
-                                      hintText: '예: 45',
-                                      helperText: '0~1440 사이 숫자',
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                  ),
-                                ],
-                                const SizedBox(height: 14),
-                                ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 6,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  tileColor: Colors.black12.withValues(
-                                    alpha: 0.02,
-                                  ),
-                                  leading: const CircleAvatar(
-                                    backgroundColor: Color(0xFFECEFFB),
-                                    child: Icon(
-                                      Icons.free_breakfast_rounded,
-                                      color: Color(0xFF0032A0),
-                                    ),
-                                  ),
-                                  title: const Text(
-                                    '휴게 시작 시간',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    _breakStartTime,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  trailing: const Icon(
-                                    Icons.keyboard_arrow_right_rounded,
-                                  ),
-                                  onTap: () async {
-                                    final temp = TextEditingController(
-                                      text: _breakStartTime,
-                                    );
-                                    await _pickTimeForController(temp);
-                                    setState(() {
-                                      _breakStartTime = temp.text;
-                                      _isBreakStartManuallyEdited = true;
-                                    });
-                                  },
-                                ),
-                                SwitchListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: const Text('휴게시간 유급 처리'),
-                                  subtitle: const Text('쉬지 못할 경우 급여 지급'),
-                                  value: _isBreakPaid,
-                                  onChanged: (val) =>
-                                      setState(() => _isBreakPaid = val),
-                                ),
-                                const SizedBox(height: 12),
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Icon(Icons.info_outline, size: 18, color: Colors.blue.shade800),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          '근로기준법 제54조에 따라 근로시간이 4시간인 경우에는 30분 이상, 8시간인 경우에는 1시간 이상의 휴게시간을 근로시간 도중에 주어야 합니다.',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            height: 1.4,
-                                            color: Colors.blue.shade900,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (_currentBreakMinutes() == 0 && !_isBreakPaid) ...[
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade50,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.red.shade200),
-                                    ),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Icon(Icons.warning_amber_rounded, size: 18, color: Colors.red.shade800),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            '경고: 휴게시간을 0분으로 무급 처리할 경우, 법적 휴게시간 미준수(근로기준법 제54조 위반)로 인한 노무 리스크가 발생할 수 있습니다.',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              height: 1.4,
-                                              color: Colors.red.shade900,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: 16),
-                                Card(
-                                  elevation: 0,
-                                  color: const Color(0xFFF3F4F6),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(14),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          '실시간 계산',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          _workMinutesExcludingBreakFromInputs() <=
-                                                  0
-                                              ? '시간을 선택하면 표시됩니다.'
-                                              : '총 ${_workHoursExcludingBreakFromInputs().toStringAsFixed(1)}시간 근무 (휴게 ${_currentBreakMinutes()}분 제외)',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleLarge
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w900,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  '등록된 근무 시간표',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                const SizedBox(height: 10),
-                                if (_workStartByDay.isEmpty ||
-                                    _workEndByDay.isEmpty)
-                                  const Text(
-                                    '아직 등록된 근무시간이 없습니다.\n위에서 요일과 시간을 먼저 설정해 주세요.',
-                                  )
-                                else
-                                  Column(
-                                    children: _workScheduleGroups().map((g) {
-                                      final breakEnd = _computedBreakEndTime();
-                                      final sortedDays = [...g.days]..sort();
-                                      final dayChipList = sortedDays
-                                          .map(
-                                            (d) => Chip(
-                                              label: Text(_weekdayLabel(d)),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                  ),
-                                            ),
-                                          )
-                                          .toList();
-                                      return Card(
-                                        elevation: 0,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            16,
-                                          ),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(14),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                        Text(
-                                                          '${g.start}~${g.end}',
-                                                          style: Theme.of(context)
-                                                              .textTheme
-                                                              .titleMedium
-                                                              ?.copyWith(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w800,
-                                                              ),
-                                                        ),
-                                                        const SizedBox(
-                                                          height: 4,
-                                                        ),
-                                                        Text(
-                                                          '휴게시간: $_breakStartTime~$breakEnd',
-                                                          style: Theme.of(
-                                                            context,
-                                                          ).textTheme.bodySmall,
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  IconButton(
-                                                    icon: const Icon(
-                                                      Icons
-                                                          .delete_outline_rounded,
-                                                    ),
-                                                    tooltip: '해당 시간표 삭제',
-                                                    onPressed: () =>
-                                                        setState(() {
-                                                          for (final day
-                                                              in g.days) {
-                                                            _workStartByDay
-                                                                .remove(day);
-                                                            _workEndByDay
-                                                                .remove(day);
-                                                            _selectedDays
-                                                                .remove(day);
-                                                            _contractedDays
-                                                                .remove(day);
-                                                          }
-                                                        }),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 10),
-                                              Wrap(
-                                                spacing: 8,
-                                                runSpacing: 8,
-                                                children: dayChipList,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                const SizedBox(height: 14),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: FilledButton.icon(
-                                    onPressed: () => setState(
-                                      () => _isEditingWorkTime = false,
-                                    ),
-                                    icon: const Icon(Icons.check_rounded),
-                                    label: const Text('확인'),
-                                  ),
-                                ),
-                                // [UI 개선] 확인 버튼이 하단 내비게이션 바에 가려지지 않도록 충분한 여백 확보
-                                const SizedBox(height: 80),
-                              ],
-                            ),
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 14),
-                            child: Divider(
-                              height: 24,
-                              thickness: 0.5,
-                              color: Color(0xFFF0F0F0),
-                            ),
-                          ),
-                          Card(
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Expanded(
-                                        child: Text(
-                                          '주휴일',
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _weeklyHours() >= 15
-                                              ? const Color(0xFFEAF3DE)
-                                              : const Color(0xFFFFF0DC),
-                                          borderRadius: BorderRadius.circular(
-                                            20,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          _weeklyHours() >= 15
-                                              ? '[유급]'
-                                              : '[무급]',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: _weeklyHours() >= 15
-                                                ? const Color(0xFF286b3a)
-                                                : const Color(0xFF854F0B),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  if (_weeklyHours() < 15)
-                                    const Text(
-                                      '초단시간 근로자로 주휴수당이 발생하지 않습니다(무급 주휴일)',
-                                      style: TextStyle(
-                                        color: Color(0xFFA32D2D),
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  const SizedBox(height: 10),
-                                  const Text(
-                                    '주휴일(요일) 선택',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Color(0xFF666666),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      for (final d in const [
-                                        1,
-                                        2,
-                                        3,
-                                        4,
-                                        5,
-                                        6,
-                                        0,
-                                      ]) // 월..일
-                                        ChoiceChip(
-                                          label: Text(_weekdayLabelShort(d)),
-                                          selected: _weeklyHolidayDay == d,
-                                          onSelected: (_) => setState(
-                                            () => _weeklyHolidayDay = d,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          if (_employeeType == _EmployeeType.foreigner) ...[
-                            const SizedBox(height: 12),
-                            Card(
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(14),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    DropdownButtonFormField<String>(
-                                      initialValue: _visaType,
-                                      decoration: const InputDecoration(
-                                        labelText: '비자 종류',
-                                      ),
-                                      items: const [
-                                        DropdownMenuItem(
-                                          value: 'E-9',
-                                          child: Text('E-9 비전문취업'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'H-2',
-                                          child: Text('H-2 방문취업'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'F-2',
-                                          child: Text('F-2 거주'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'F-4',
-                                          child: Text('F-4 재외동포'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'F-5',
-                                          child: Text('F-5 영주'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: '기타',
-                                          child: Text('기타'),
-                                        ),
-                                      ],
-                                      onChanged: (v) =>
-                                          setState(() => _visaType = v),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    if (_visaType == 'F-4' || _visaType == '기타')
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(10),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFFCEBEB),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          '⚠️ 해당 비자는 취업이 제한될 수 있습니다',
-                                          style: TextStyle(
-                                            color: Color(0xFFA32D2D),
-                                          ),
-                                        ),
-                                      ),
-                                    ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      title: const Text('체류기간 만료일'),
-                                      subtitle: Text(
-                                        _visaExpiryDate == null
-                                            ? '선택 안됨'
-                                            : _visaExpiryDate!
-                                                  .toIso8601String()
-                                                  .substring(0, 10),
-                                      ),
-                                      trailing: const Icon(
-                                        Icons.calendar_today_outlined,
-                                      ),
-                                      onTap: () async {
-                                        final date = await showDatePicker(
-                                          context: context,
-                                          initialDate:
-                                              _visaExpiryDate ??
-                                              AppClock.now().add(
-                                                const Duration(days: 365),
-                                              ),
-                                          firstDate: AppClock.now(),
-                                          lastDate: AppClock.now().add(
-                                            const Duration(days: 3650),
-                                          ),
-                                        );
-                                        if (date != null)
-                                          setState(
-                                            () => _visaExpiryDate = date,
-                                          );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                          Card(
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  SwitchListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    title: const Text('수습기간 적용(90%) 여부'),
-                                    subtitle: const Text(
-                                      '수습기간 급여를 90%로 반영합니다.',
-                                    ),
-                                    value: _applyProbationWage90Percent && _canApplyProbation,
-                                    activeThumbColor: const Color(0xFF1a6ebd),
-                                    onChanged: (v) {
-                                      if (v && !_canApplyProbation) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('1년 이상 계약 시에만 수습 기간을 적용할 수 있습니다.')),
-                                        );
-                                        return;
-                                      }
-                                      setState(() {
-                                        _applyProbationWage90Percent = v;
-                                        if (!v) _probationMonths = 3;
-                                      });
-                                    },
-                                  ),
-                                  AnimatedCrossFade(
-                                    duration: const Duration(milliseconds: 300),
-                                    crossFadeState: (_applyProbationWage90Percent && _canApplyProbation)
-                                        ? CrossFadeState.showSecond
-                                        : CrossFadeState.showFirst,
-                                    firstChild: const SizedBox.shrink(),
-                                    secondChild: _buildProbationGuide(),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          // ── 자동 판정 안내 ──
-                          Container(
-                            margin: const EdgeInsets.only(top: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0F4FF),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: const Color(0xFF90CAF9),
-                              ),
-                            ),
-                            child: const Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('ℹ️', style: TextStyle(fontSize: 16)),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    '주휴 발생 여부는 출퇴근 데이터(월~일 달력 기준)를 기반으로 시스템이 자동 판정합니다.',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF1565C0),
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+          const SizedBox(height: 24),
+          if (_wageType == WageType.hourly)
+            TextField(
+              controller: _wageController,
+              focusNode: _pageFocus4,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(fontSize: 22),
+              decoration: const InputDecoration(
+                labelText: '시급',
+                suffixText: '원',
+                border: UnderlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            )
+          else
+            TextField(
+              controller: _monthlyWageController,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(fontSize: 22),
+              decoration: const InputDecoration(
+                labelText: '월급',
+                suffixText: '원',
+                border: UnderlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          if (_wageError != null) ...[
+            const SizedBox(height: 8),
+            Text(_wageError!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+          ],
+        ],
+      ),
+    );
+  }
 
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 14),
-                            child: Divider(
-                              height: 24,
-                              thickness: 0.5,
-                              color: Color(0xFFF0F0F0),
-                            ),
-                          ),
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('장기 근무'),
-                            value: _isLongTerm,
-                            onChanged: (v) => setState(() => _isLongTerm = v),
-                          ),
-                          if (!_isLongTerm)
-                            GestureDetector(
-                              onTap: () => _selectDate(
-                                context,
-                                _contractEndDate,
-                                (d) => setState(() => _contractEndDate = d),
-                              ),
-                              child: Container(
-                                margin: const EdgeInsets.only(top: 8),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 14,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF5F5F5),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.calendar_today_outlined,
-                                      color: Color(0xFF888888),
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const Text(
-                                            '계약 종료일 (선택)',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Color(0xFF888888),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            _formatDateKo(_contractEndDate),
-                                            style: TextStyle(
-                                              fontSize: 15,
-                                              color: _contractEndDate != null
-                                                  ? const Color(0xFF1a1a2e)
-                                                  : const Color(0xFFBBBBBB),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
+  // ── Page 3: 근무 스케줄 (카드형 미니 Stepper) ──
+  Widget _buildPage3Schedule() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPageTitle('근무 스케줄을\n설정해주세요.', subtitle: '나중에 수정할 수 있어요.'),
+          // 요일 선택
+          const Text('근무 요일', style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in {
+                DateTime.monday: '월',
+                DateTime.tuesday: '화',
+                DateTime.wednesday: '수',
+                DateTime.thursday: '목',
+                DateTime.friday: '금',
+                DateTime.saturday: '토',
+                DateTime.sunday: '일',
+              }.entries)
+                GestureDetector(
+                  onTap: () => setState(() {
+                    if (_contractedDays.contains(entry.key)) {
+                      _contractedDays.remove(entry.key);
+                    } else {
+                      _contractedDays.add(entry.key);
+                    }
+                  }),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _contractedDays.contains(entry.key) ? const Color(0xFF1a6ebd) : Colors.white,
+                      border: Border.all(
+                        color: _contractedDays.contains(entry.key) ? const Color(0xFF1a6ebd) : Colors.grey.shade300,
                       ),
                     ),
-                  ],
-                  subtitle: _subtitleSection2(),
+                    child: Center(
+                      child: Text(
+                        entry.value,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _contractedDays.contains(entry.key) ? Colors.white : Colors.black54,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-          // ── Block 2: 급여 설계 ──
-          _buildSection(
+            ],
+          ),
+          const SizedBox(height: 24),
+          // 근무 시간
+          const Text('기본 근무 시간', style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _bulkStartController,
+                  decoration: const InputDecoration(labelText: '출근', border: OutlineInputBorder()),
+                  onTap: () => _pickTimeForController(_bulkStartController),
+                  readOnly: true,
+                ),
+              ),
+              const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('~', style: TextStyle(fontSize: 20))),
+              Expanded(
+                child: TextField(
+                  controller: _bulkEndController,
+                  decoration: const InputDecoration(labelText: '퇴근', border: OutlineInputBorder()),
+                  onTap: () => _pickTimeForController(_bulkEndController),
+                  readOnly: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // 휴게시간
+          const Text('휴게 시간', style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('30분'),
+                selected: _breakPreset == _BreakPreset.minutes30,
+                selectedColor: const Color(0xFF1a6ebd),
+                onSelected: (_) => setState(() {
+                  _breakPreset = _BreakPreset.minutes30;
+                  _breakMinutesController.text = '30';
+                }),
+              ),
+              ChoiceChip(
+                label: const Text('1시간'),
+                selected: _breakPreset == _BreakPreset.minutes60,
+                selectedColor: const Color(0xFF1a6ebd),
+                onSelected: (_) => setState(() {
+                  _breakPreset = _BreakPreset.minutes60;
+                  _breakMinutesController.text = '60';
+                }),
+              ),
+              ChoiceChip(
+                label: const Text('직접 입력'),
+                selected: _breakPreset == _BreakPreset.custom,
+                selectedColor: const Color(0xFF1a6ebd),
+                onSelected: (_) => setState(() => _breakPreset = _BreakPreset.custom),
+              ),
+            ],
+          ),
+          if (_breakPreset == _BreakPreset.custom) ...[
+            const SizedBox(height: 10),
+            TextField(
+              controller: _breakMinutesController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: '휴게 시간 (분)', suffixText: '분', border: OutlineInputBorder()),
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── Page 4: 세부 옵션 통합 ──
+  Widget _buildPage4Options() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 80),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPageTitle('세부 옵션 설정', subtitle: '나중에 설정하기를 눌러도 기본 정보는 저장됩니다.'),
+          // 급여 설계 섹션
+          if (!_isDispatch) _buildSection(
             '급여 설계',
             Icons.payments_outlined,
             const Color(0xFF0D47A1),
@@ -3517,252 +2631,174 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
             [_buildBlock2WageContent()],
             subtitle: _wageType == WageType.monthly ? '월급제' : '시급제',
           ),
-          // ── Block 3: 수당 및 절세 ──
-          _buildSection(
+          const SizedBox(height: 12),
+          // 수당 및 절세
+          if (!_isDispatch) _buildSection(
             '수당 및 절세',
             Icons.savings_outlined,
             const Color(0xFF2E7D32),
             _sectionAllowanceExpanded,
-            () => setState(
-              () => _sectionAllowanceExpanded = !_sectionAllowanceExpanded,
-            ),
+            () => setState(() => _sectionAllowanceExpanded = !_sectionAllowanceExpanded),
             [_buildBlock3AllowanceContent()],
             subtitle: '식대/비과세/고정OT',
           ),
-          // ── Block 4: 최종 검증 대시보드 ──
-          _buildSection(
-            '최종 검증',
-            Icons.verified_user_outlined,
-            const Color(0xFF6A1B9A),
-            _sectionVerifyExpanded,
-            () => setState(
-              () => _sectionVerifyExpanded = !_sectionVerifyExpanded,
-            ),
-            [_buildBlock4VerifyContent()],
-            subtitle: 'S_Legal 기반 노무 방패',
+          const SizedBox(height: 12),
+          // 소득구분·공제
+          if (!_isDispatch) _buildSection(
+            '소득 구분 · 공제',
+            Icons.receipt_long_outlined,
+            const Color(0xFF6B4F2C),
+            _section3Expanded,
+            () => setState(() => _section3Expanded = !_section3Expanded),
+            [Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: _compensationDeductionSection(context),
+            )],
+            subtitle: _subtitleSection3(),
           ),
-          _isDispatch
-              ? const SizedBox.shrink()
-              : _buildSection(
-                  '소득 구분 · 공제',
-                  Icons.receipt_long_outlined,
-                  const Color(0xFF6B4F2C),
-                  _section3Expanded,
-                  () => setState(() => _section3Expanded = !_section3Expanded),
-                  [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                      child: _compensationDeductionSection(context),
-                    ),
-                  ],
-                  subtitle: _subtitleSection3(),
-                ),
+          const SizedBox(height: 12),
+          // 보건증/근무 정책
           _buildSection(
             '보건증/근무 정책',
             Icons.health_and_safety_outlined,
             const Color(0xFFc45c26),
             _section4Expanded,
             () => setState(() => _section4Expanded = !_section4Expanded),
-            [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: _buildHealthPolicySection(),
-              ),
-            ],
+            [Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: _buildHealthPolicySection(),
+            )],
             subtitle: '보건증 관리 설정',
           ),
-          
+          const SizedBox(height: 12),
+          // 고급 노무 설정
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: _buildAdvancedLaborSettingsSection(),
           ),
-
-
-          // ── 온보딩: 맨 아래까지 내리면 보이는 계약서 안내 ──
-          if (widget.initialWorker == null &&
-              OnboardingGuideService.instance.isActive &&
-              OnboardingGuideService.instance.currentStep.index <=
-                  OnboardingStep.firstStaff.index &&
-              !_isDispatch)
-            Container(
-              margin: const EdgeInsets.only(top: 20, bottom: 8),
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF2E7D32), Color(0xFF43A047)],
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF2E7D32).withValues(alpha: 0.25),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text('📄', style: TextStyle(fontSize: 24)),
-                      SizedBox(width: 10),
-                      Text(
-                        '여기까지 오셨으면 거의 다 됐어요!',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    '아래 「저장 및 계약서 작성」 버튼을 누르면\n'
-                    '직원 정보 저장 → 초대코드 발급 → 근로계약서 작성까지\n'
-                    '한 번에 진행됩니다!',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white70,
-                      height: 1.6,
-                    ),
-                  ),
-                  SizedBox(height: 12),
-                  Center(
-                    child: Text(
-                      '👇 아래 버튼을 눌러주세요',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          const SizedBox(height: 24),
+          // 최종 검증
+          if (!_isDispatch) _buildSection(
+            '최종 검증',
+            Icons.verified_user_outlined,
+            const Color(0xFF6A1B9A),
+            _sectionVerifyExpanded,
+            () => setState(() => _sectionVerifyExpanded = !_sectionVerifyExpanded),
+            [_buildBlock4VerifyContent()],
+            subtitle: 'S_Legal 기반 노무 방패',
+          ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isLastPage = _currentPage == _totalPages - 1;
+    return PopScope(
+      canPop: _currentPage == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _currentPage > 0) _prevPage();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF2F2F7),
+        appBar: AppBar(
+          title: Text(widget.initialWorker == null ? '신규 직원 등록' : '직원 정보 수정'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _prevPage,
+          ),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(4),
+            child: LinearProgressIndicator(
+              value: (_currentPage + 1) / _totalPages,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF1a6ebd)),
+            ),
+          ),
+        ),
+        body: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          onPageChanged: (i) => setState(() => _currentPage = i),
           children: [
-            // 온보딩 안내: 어떤 버튼을 눌러야 하는지 표시
-            if (widget.initialWorker == null &&
-                OnboardingGuideService.instance.isActive &&
-                OnboardingGuideService.instance.currentStep.index <=
-                    OnboardingStep.firstStaff.index &&
-                !_isDispatch)
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE3F2FD),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: const Color(0xFF1565C0).withValues(alpha: 0.3),
-                  ),
-                ),
-                child: const Row(
-                  children: [
-                    Text('\ud83d\udc47', style: TextStyle(fontSize: 18)),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '오른쪽 버튼을 누르면 모든 노무서류 작성을 마친 후 알바생을 초대할 수 있어요!',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF1565C0),
-                          fontWeight: FontWeight.w600,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+            _buildPage0Name(),
+            _buildPage1Phone(),
+            _buildPage2Wage(),
+            _buildPage3Schedule(),
+            _buildPage4Options(),
+          ],
+        ),
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isLastPage) ...[
+                // 마지막 페이지: 저장 버튼들
                 if (!_isDispatch) ...[
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _saveAndContract,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1a1a2e),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _saveAndContract,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1a1a2e),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      elevation: 0,
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            '전자 근로계약서 신규 생성',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton(
-                    onPressed: _isLoading ? null : _saveWithPaperContract,
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF1a1a2e)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: const Text(
-                      '이미 서면 계약서로 작성함 (전자서명 생략)',
-                      style: TextStyle(
-                        color: Color(0xFF1a1a2e),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      child: _isLoading
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text('전자 근로계약서 신규 생성', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
                     ),
                   ),
                   const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      onPressed: _isLoading ? null : _saveWithPaperContract,
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF1a1a2e)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text('이미 서면 계약서로 작성함', style: TextStyle(color: Color(0xFF1a1a2e), fontSize: 14, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                 ],
                 TextButton(
                   onPressed: _isLoading ? null : _saveOnly,
-                  child: const Text(
-                    '기본 정보만 저장',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      decoration: TextDecoration.underline,
+                  child: const Text('기본 정보만 저장', style: TextStyle(color: Colors.grey, fontSize: 13, decoration: TextDecoration.underline)),
+                ),
+              ] else ...[
+                // 중간 페이지: 다음 버튼
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: FilledButton(
+                    onPressed: _isCurrentPageValid() ? _nextPage : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF1a6ebd),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
+                    child: const Text('다음', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                   ),
                 ),
+                if (_currentPage >= 3)
+                  TextButton(
+                    onPressed: _nextPage,
+                    child: const Text('나중에 설정하기', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                  ),
               ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  String _formatOptionalDateKo(DateTime? date) {
-    if (date == null) return '미정';
-    return _formatDateKo(date);
-  }
 
   Widget _buildDispatchSection() {
     return _buildSection(
@@ -5496,7 +4532,12 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
     _breakMinutesController.removeListener(_weeklyHoursSyncListener);
     _workStartController.removeListener(_weeklyHoursSyncListener);
     _workEndController.removeListener(_weeklyHoursSyncListener);
+    _pageController.dispose();
+    _pageFocus1.dispose();
+    _pageFocus2.dispose();
+    _pageFocus4.dispose();
     _nameController.dispose();
+
     _phoneController.dispose();
     _dispatchCompanyController.dispose();
     _dispatchContactController.dispose();

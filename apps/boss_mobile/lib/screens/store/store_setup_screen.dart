@@ -15,104 +15,116 @@ class StoreSetupScreen extends StatefulWidget {
 }
 
 class _StoreSetupScreenState extends State<StoreSetupScreen> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+  final int _totalPages = 6;
+
+  // Form Controllers
   final _nameController = TextEditingController();
+  final _addressController = TextEditingController();
   final _repNameController = TextEditingController();
   final _repPhoneController = TextEditingController();
-  final _addressController = TextEditingController();
   final _startDayController = TextEditingController(text: '1');
   final _endDayController = TextEditingController(text: '31');
   final _paydayController = TextEditingController(text: '10');
-  bool _isFiveOrMore = false;
+  
+  bool? _isFiveOrMore; // null means not selected yet
+  
   final _dbService = DatabaseService();
   bool _isLoading = false;
   final _db = FirebaseFirestore.instance;
 
-  String? _nameError;
-  String? _repNameError;
-  String? _repPhoneError;
-  String? _addressError;
-  String? _startDayError;
-  String? _endDayError;
-  String? _paydayError;
-  int _currentStep = 0;
+  // Focus Nodes for auto-focus
+  final _nameFocus = FocusNode();
+  final _addressFocus = FocusNode();
+  final _repNameFocus = FocusNode();
+  final _repPhoneFocus = FocusNode();
+  final _startDayFocus = FocusNode();
 
-  void _clearErrors() {
-    _nameError = null;
-    _repNameError = null;
-    _repPhoneError = null;
-    _addressError = null;
-    _startDayError = null;
-    _endDayError = null;
-    _paydayError = null;
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _nameController.dispose();
+    _addressController.dispose();
+    _repNameController.dispose();
+    _repPhoneController.dispose();
+    _startDayController.dispose();
+    _endDayController.dispose();
+    _paydayController.dispose();
+    _nameFocus.dispose();
+    _addressFocus.dispose();
+    _repNameFocus.dispose();
+    _repPhoneFocus.dispose();
+    _startDayFocus.dispose();
+    super.dispose();
+  }
+
+  void _nextPage() {
+    FocusScope.of(context).unfocus(); // dismiss keyboard before sliding
+    if (_currentPage < _totalPages - 1) {
+      _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+      // Auto focus logic
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        switch (_currentPage) {
+          case 1: _nameFocus.requestFocus(); break;
+          case 2: _addressFocus.requestFocus(); break;
+          case 3: _repNameFocus.requestFocus(); break;
+          case 4: _repPhoneFocus.requestFocus(); break;
+          case 5: _startDayFocus.requestFocus(); break;
+        }
+      });
+    } else {
+      _handleSave();
+    }
+  }
+
+  void _prevPage() {
+    FocusScope.of(context).unfocus();
+    if (_currentPage > 0) {
+      _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  bool _isNextEnabled() {
+    switch (_currentPage) {
+      case 0: return _isFiveOrMore != null;
+      case 1: return _nameController.text.trim().isNotEmpty;
+      case 2: return _addressController.text.trim().isNotEmpty;
+      case 3: return _repNameController.text.trim().isNotEmpty;
+      case 4: 
+        final digits = _repPhoneController.text.replaceAll(RegExp(r'[^0-9]'), '');
+        return digits.length >= 10;
+      case 5:
+        final s = int.tryParse(_startDayController.text.trim());
+        final e = int.tryParse(_endDayController.text.trim());
+        final p = int.tryParse(_paydayController.text.trim());
+        return s != null && s >= 1 && s <= 31 && e != null && e >= 1 && e <= 31 && p != null && p >= 1 && p <= 31;
+      default: return false;
+    }
   }
 
   Future<void> _handleSave() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    setState(_clearErrors);
+    
+    setState(() => _isLoading = true);
+
     try {
       final name = _nameController.text.trim();
-      if (name.isEmpty) {
-        setState(() {
-          _nameError = '필수 입력입니다.';
-        });
-        return;
-      }
-
       final repName = _repNameController.text.trim();
-      if (repName.isEmpty) {
-        setState(() {
-          _repNameError = '필수 입력입니다.';
-        });
-        return;
-      }
-
-      final repPhoneRaw = _repPhoneController.text.trim();
-      final repPhoneDigits = repPhoneRaw.replaceAll(RegExp(r'[^0-9]'), '');
-      if (repPhoneDigits.length < 10) {
-        setState(() {
-          _repPhoneError = '전화번호를 입력해 주세요.';
-        });
-        return;
-      }
-
+      final repPhoneDigits = _repPhoneController.text.replaceAll(RegExp(r'[^0-9]'), '');
       final address = _addressController.text.trim();
-      if (address.isEmpty) {
-        setState(() {
-          _addressError = '주소는 필수입니다.';
-        });
-        return;
-      }
-
-      final startDay = int.tryParse(_startDayController.text.trim());
-      if (startDay == null || startDay < 1 || startDay > 31) {
-        setState(() {
-          _startDayError = '1~31 사이 숫자만 입력해 주세요.';
-        });
-        return;
-      }
-
-      final endDay = int.tryParse(_endDayController.text.trim());
-      if (endDay == null || endDay < 1 || endDay > 31) {
-        setState(() {
-          _endDayError = '1~31 사이 숫자만 입력해 주세요.';
-        });
-        return;
-      }
-
-      final payday = int.tryParse(_paydayController.text.trim());
-      if (payday == null || payday < 1 || payday > 31) {
-        setState(() {
-          _paydayError = '1~31 사이 숫자만 입력해 주세요.';
-        });
-        return;
-      }
-
-      // Passed validation
-      setState(() {
-        _clearErrors();
-        _isLoading = true;
-      });
+      final startDay = int.parse(_startDayController.text.trim());
+      final endDay = int.parse(_endDayController.text.trim());
+      final payday = int.parse(_paydayController.text.trim());
 
       final store = Store(
         id: const Uuid().v4(),
@@ -126,17 +138,15 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
         settlementStartDay: startDay,
         settlementEndDay: endDay,
         payday: payday,
-        isFiveOrMore: _isFiveOrMore,
+        isFiveOrMore: _isFiveOrMore ?? false,
       );
 
       await _dbService.createStore(store);
-      // Map "one owner account -> one store" via users/{uid}.storeId
       await _db.collection('users').doc(user.uid).set(
         {'storeId': store.id},
         SetOptions(merge: true),
       );
 
-      // 대시보드·설정 탭은 Hive StoreInfo를 봅니다. Firestore와 맞춰 둡니다.
       final box = Hive.box<StoreInfo>('store');
       await box.put(
         'current',
@@ -164,182 +174,305 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     }
   }
 
+  Widget _buildTitle(String text, {String? subtitle}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(text, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, height: 1.4)),
+        if (subtitle != null) ...[
+          const SizedBox(height: 8),
+          Text(subtitle, style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+        ],
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('사업장 초기 설정')),
-      body: Stepper(
-        type: StepperType.vertical,
-        currentStep: _currentStep,
-        onStepTapped: (v) => setState(() => _currentStep = v),
-        controlsBuilder: (context, details) {
-          final isLast = _currentStep == 2;
-          return Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: _isLoading
-                        ? null
-                        : () async {
-                            if (isLast) {
-                              await _handleSave();
-                              return;
-                            }
-                            setState(() => _currentStep += 1);
-                          },
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(isLast ? '설정 완료' : '다음'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (_currentStep > 0)
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: _isLoading
-                          ? null
-                          : () => setState(() => _currentStep -= 1),
-                      child: const Text('이전'),
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
-        steps: [
-          Step(
-            isActive: _currentStep >= 0,
-            title: const Text('기본 정보'),
-            content: Column(
-              children: [
-                TextField(
-                  controller: _nameController,
-                  decoration: InputDecoration(
-                    labelText: '매장 이름',
-                    hintText: '예: 정석 카페',
-                    errorText: _nameError,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _addressController,
-                  decoration: InputDecoration(
-                    labelText: '주소',
-                    errorText: _addressError,
-                  ),
-                ),
-              ],
+    return WillPopScope(
+      onWillPop: () async {
+        if (_currentPage > 0) {
+          _prevPage();
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _prevPage,
+          ),
+          title: const Text('사업장 등록'),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(4),
+            child: LinearProgressIndicator(
+              value: (_currentPage + 1) / _totalPages,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
             ),
           ),
-          Step(
-            isActive: _currentStep >= 1,
-            title: const Text('대표자 정보'),
-            content: Column(
-              children: [
-                TextField(
-                  controller: _repNameController,
-                  decoration: InputDecoration(
-                    labelText: '대표자 이름',
-                    errorText: _repNameError,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _repPhoneController,
-                  decoration: InputDecoration(
-                    labelText: '대표자 전화번호',
-                    hintText: '예: 010-1234-5678',
-                    errorText: _repPhoneError,
-                  ),
-                  keyboardType: TextInputType.phone,
-                ),
-              ],
-            ),
-          ),
-          Step(
-            isActive: _currentStep >= 2,
-            title: const Text('정산/정책'),
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(), // Disable swipe
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentPage = index;
+                    });
+                  },
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _startDayController,
-                        decoration: InputDecoration(
-                          labelText: '정산 시작일',
-                          suffixText: '일',
-                          errorText: _startDayError,
-                        ),
-                        keyboardType: TextInputType.number,
+                    // Page 0: 5인 이상 여부
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTitle('가장 먼저,\n상시 근로자가 5인 이상인가요?', subtitle: '연장·야간·휴일근로 가산수당 등 법정 수당 계산 방식에 반영됩니다.'),
+                          _buildSelectionCard(
+                            title: '예 (5인 이상)',
+                            isSelected: _isFiveOrMore == true,
+                            onTap: () {
+                              setState(() => _isFiveOrMore = true);
+                              Future.delayed(const Duration(milliseconds: 200), _nextPage);
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          _buildSelectionCard(
+                            title: '아니요 (5인 미만)',
+                            isSelected: _isFiveOrMore == false,
+                            onTap: () {
+                              setState(() => _isFiveOrMore = false);
+                              Future.delayed(const Duration(milliseconds: 200), _nextPage);
+                            },
+                          ),
+                        ],
                       ),
                     ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: Text('~'),
+
+                    // Page 1: 매장 이름
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTitle('사업장(매장)의\n이름을 알려주세요.'),
+                          TextField(
+                            controller: _nameController,
+                            focusNode: _nameFocus,
+                            style: const TextStyle(fontSize: 20),
+                            decoration: const InputDecoration(
+                              hintText: '예: 정석 카페',
+                              border: UnderlineInputBorder(),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                            onSubmitted: (_) {
+                              if (_isNextEnabled()) _nextPage();
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                    Expanded(
-                      child: TextField(
-                        controller: _endDayController,
-                        decoration: InputDecoration(
-                          labelText: '정산 종료일',
-                          suffixText: '일',
-                          errorText: _endDayError,
-                        ),
-                        keyboardType: TextInputType.number,
+
+                    // Page 2: 매장 주소
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTitle('사업장의 주소를\n입력해주세요.'),
+                          TextField(
+                            controller: _addressController,
+                            focusNode: _addressFocus,
+                            style: const TextStyle(fontSize: 20),
+                            decoration: const InputDecoration(
+                              hintText: '전체 주소 입력',
+                              border: UnderlineInputBorder(),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                            onSubmitted: (_) {
+                              if (_isNextEnabled()) _nextPage();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Page 3: 대표자 이름
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTitle('대표자 성함을\n입력해주세요.'),
+                          TextField(
+                            controller: _repNameController,
+                            focusNode: _repNameFocus,
+                            style: const TextStyle(fontSize: 20),
+                            decoration: const InputDecoration(
+                              hintText: '대표자 본명',
+                              border: UnderlineInputBorder(),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                            onSubmitted: (_) {
+                              if (_isNextEnabled()) _nextPage();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Page 4: 대표자 연락처
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTitle('대표자 연락처를\n입력해주세요.', subtitle: '주요 알림이나 안내를 위해 사용됩니다.'),
+                          TextField(
+                            controller: _repPhoneController,
+                            focusNode: _repPhoneFocus,
+                            keyboardType: TextInputType.phone,
+                            style: const TextStyle(fontSize: 20),
+                            decoration: const InputDecoration(
+                              hintText: '예: 010-1234-5678',
+                              border: UnderlineInputBorder(),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                            onSubmitted: (_) {
+                              if (_isNextEnabled()) _nextPage();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Page 5: 정산 기간 및 급여일
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTitle('정산 기간 및 급여일을\n설정해주세요.', subtitle: '종료일이 시작일보다 작으면 자동으로 다음 달로 계산됩니다.'),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _startDayController,
+                                  focusNode: _startDayFocus,
+                                  keyboardType: TextInputType.number,
+                                  style: const TextStyle(fontSize: 20),
+                                  decoration: const InputDecoration(
+                                    labelText: '정산 시작일',
+                                    suffixText: '일',
+                                  ),
+                                  onChanged: (_) => setState(() {}),
+                                ),
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 16),
+                                child: Text('~', style: TextStyle(fontSize: 20)),
+                              ),
+                              Expanded(
+                                child: TextField(
+                                  controller: _endDayController,
+                                  keyboardType: TextInputType.number,
+                                  style: const TextStyle(fontSize: 20),
+                                  decoration: const InputDecoration(
+                                    labelText: '정산 종료일',
+                                    suffixText: '일',
+                                  ),
+                                  onChanged: (_) => setState(() {}),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          TextField(
+                            controller: _paydayController,
+                            keyboardType: TextInputType.number,
+                            style: const TextStyle(fontSize: 20),
+                            decoration: const InputDecoration(
+                              labelText: '급여 지급일',
+                              suffixText: '일',
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: 24),
+                          TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _startDayController.text = '16';
+                                _endDayController.text = '15';
+                                _paydayController.text = '20';
+                              });
+                            },
+                            icon: const Icon(Icons.auto_fix_high),
+                            label: const Text('예시 입력: 16일 ~ 익월 15일 정산, 20일 지급'),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '종료일이 시작일보다 작으면 다음 달로 넘어갑니다. (예: 3/16~4/15)',
-                  style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _paydayController,
-                  decoration: InputDecoration(
-                    labelText: '급여 지급일',
-                    suffixText: '일',
-                    errorText: _paydayError,
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _startDayController.text = '16';
-                        _endDayController.text = '15';
-                        _paydayController.text = '20';
-                        _clearErrors();
-                      });
-                    },
-                    icon: const Icon(Icons.auto_fix_high),
-                    label: const Text('예시 입력: 3/16~4/15, 매월 20일'),
+              ),
+              
+              // Bottom Next Button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: FilledButton(
+                    onPressed: _isNextEnabled() && !_isLoading ? _nextPage : null,
+                    style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _isLoading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : Text(
+                            _currentPage == _totalPages - 1 ? '설정 완료' : '다음',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
                   ),
                 ),
-                SwitchListTile(
-                  title: const Text('상시 근로자 5인 이상 사업장'),
-                  subtitle: const Text('법정 수당 계산 방식에 반영됩니다.'),
-                  value: _isFiveOrMore,
-                  onChanged: (val) => setState(() => _isFiveOrMore = val),
-                ),
-              ],
-            ),
+              )
+            ],
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectionCard({required String title, required bool isSelected, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue.shade50 : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? Colors.blueAccent : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? Colors.blueAccent : Colors.black87,
+          ),
+        ),
       ),
     );
   }
 }
+
