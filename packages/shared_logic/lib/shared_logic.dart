@@ -3,6 +3,7 @@ library;
 export 'src/models/store_model.dart';
 export 'src/models/pay_item_model.dart';
 export 'src/models/attendance_model.dart';
+export 'src/models/payroll_settlement.dart';
 export 'src/models/pay_summary_model.dart';
 export 'src/models/substitution_model.dart';
 export 'src/models/education_model.dart';

@@ -7,6 +7,7 @@ import '../models/substitution_model.dart';
 import '../models/document_model.dart';
 import '../models/education_model.dart';
 import '../models/shift_model.dart';
+import '../models/payroll_settlement.dart';
 
 class DatabaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -139,6 +140,93 @@ class DatabaseService {
     return snapshot.docs
         .map((doc) => Attendance.fromJson(doc.data(), id: doc.id))
         .toList();
+  }
+
+  // --- Payroll Settlement Operations ---
+
+  Future<void> closePayrollPeriod({
+    required PayrollSettlement settlement,
+  }) async {
+    final batch = _db.batch();
+
+    // 1. Save settlement snapshot
+    final settlementRef = _db.collection('payroll_settlements').doc(settlement.id);
+    batch.set(settlementRef, settlement.toJson());
+
+    // 2. Lock all attendances in this period
+    final attendanceQuery = await _db
+        .collection('attendance')
+        .where('storeId', isEqualTo: settlement.storeId)
+        .where('clockIn', isGreaterThanOrEqualTo: settlement.periodStart.toIso8601String())
+        .get();
+
+    for (final doc in attendanceQuery.docs) {
+      final att = Attendance.fromJson(doc.data(), id: doc.id);
+      if (att.clockIn.isBefore(settlement.periodEnd.add(const Duration(days: 1)))) {
+        final attRef = _db.collection('attendance').doc(doc.id);
+        batch.update(attRef, {
+          'previousStatus': att.attendanceStatus,
+          'attendanceStatus': 'LOCKED',
+        });
+      }
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> unlockPayrollPeriod({
+    required String settlementId,
+    required String storeId,
+    required String reason,
+    required String unlockedBy,
+  }) async {
+    final settlementRef = _db.collection('payroll_settlements').doc(settlementId);
+    
+    // 1. Update Audit Log
+    await _db.runTransaction((tx) async {
+      final doc = await tx.get(settlementRef);
+      if (!doc.exists) return;
+      
+      final data = doc.data()!;
+      final auditLogs = List<Map<String, dynamic>>.from(data['auditLogs'] ?? []);
+      auditLogs.add({
+        'who': unlockedBy,
+        'when': AppClock.now().toIso8601String(),
+        'reason': reason,
+      });
+      
+      tx.update(settlementRef, {
+        'auditLogs': auditLogs,
+      });
+    });
+    
+    // 2. Unlock attendances outside transaction (due to queries and batch sizes)
+    final doc = await settlementRef.get();
+    if (!doc.exists) return;
+    
+    final periodStartIso = doc.data()!['periodStart'] as String;
+    final periodEndIso = doc.data()!['periodEnd'] as String;
+    final periodEnd = DateTime.parse(periodEndIso);
+
+    final attendanceQuery = await _db
+        .collection('attendance')
+        .where('storeId', isEqualTo: storeId)
+        .where('clockIn', isGreaterThanOrEqualTo: periodStartIso)
+        .get();
+
+    final batch = _db.batch();
+    for (final attDoc in attendanceQuery.docs) {
+      final att = Attendance.fromJson(attDoc.data(), id: attDoc.id);
+      if (att.clockIn.isBefore(periodEnd.add(const Duration(days: 1))) && att.attendanceStatus == 'LOCKED') {
+        final attRef = _db.collection('attendance').doc(attDoc.id);
+        batch.update(attRef, {
+          'attendanceStatus': 'REOPENED',
+          // 만약 previousStatus가 없다면 기본적으로 EDITED로 간주 (방어 코드)
+          'previousStatus': att.previousStatus ?? 'EDITED',
+        });
+      }
+    }
+    await batch.commit();
   }
 
   Stream<List<Attendance>> streamDailyAttendance(

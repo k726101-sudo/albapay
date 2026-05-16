@@ -2157,7 +2157,7 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
     if (!isCompleted(contractType)) {
       final documentId = '${worker.id}_${contractType.name}';
       if (!mounted) return;
-      await Navigator.push(
+      final showNextFromContract = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
           builder: (_) => ContractPage(
@@ -2168,6 +2168,11 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
           ),
         ),
       );
+      if (!mounted) return;
+      if (showNextFromContract != true) {
+        if (showNextFromContract == false) Navigator.pop(context);
+        return;
+      }
     }
 
     // 마법사 마지막 단계: 신규 직원인 경우 노무서류 작성을 모두 마친 후 직원 초대 팝업 띄우기
@@ -2182,6 +2187,8 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
       );
       // 온보딩: 초대 코드 발송 완료
       OnboardingGuideService.instance.completeStep(OnboardingStep.sendInvite);
+      if (!mounted) return;
+      Navigator.pop(context); // 마법사 종료 후 직원등록 화면 닫기
     }
   }
 
@@ -2739,41 +2746,6 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                Card(
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(14),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          '실시간 계산',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          _workMinutesExcludingBreakFromInputs() <=
-                                                  0
-                                              ? '시간을 선택하면 표시됩니다.'
-                                              : '총 ${_workHoursExcludingBreakFromInputs().toStringAsFixed(1)}시간 근무 (휴게 ${_currentBreakMinutes()}분 제외)',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleLarge
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w900,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
                                 SizedBox(
                                   width: double.infinity,
                                   child: FilledButton.icon(
@@ -2971,6 +2943,96 @@ class _AddStaffScreenState extends State<AddStaffScreen> {
                                   value: _isBreakPaid,
                                   onChanged: (val) =>
                                       setState(() => _isBreakPaid = val),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(Icons.info_outline, size: 18, color: Colors.blue.shade800),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '근로기준법 제54조에 따라 근로시간이 4시간인 경우에는 30분 이상, 8시간인 경우에는 1시간 이상의 휴게시간을 근로시간 도중에 주어야 합니다.',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            height: 1.4,
+                                            color: Colors.blue.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (_currentBreakMinutes() == 0 && !_isBreakPaid) ...[
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.red.shade200),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(Icons.warning_amber_rounded, size: 18, color: Colors.red.shade800),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            '경고: 휴게시간을 0분으로 무급 처리할 경우, 법적 휴게시간 미준수(근로기준법 제54조 위반)로 인한 노무 리스크가 발생할 수 있습니다.',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              height: 1.4,
+                                              color: Colors.red.shade900,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 16),
+                                Card(
+                                  elevation: 0,
+                                  color: const Color(0xFFF3F4F6),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(14),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          '실시간 계산',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          _workMinutesExcludingBreakFromInputs() <=
+                                                  0
+                                              ? '시간을 선택하면 표시됩니다.'
+                                              : '총 ${_workHoursExcludingBreakFromInputs().toStringAsFixed(1)}시간 근무 (휴게 ${_currentBreakMinutes()}분 제외)',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleLarge
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                                 const SizedBox(height: 16),
                                 Text(

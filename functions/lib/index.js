@@ -749,7 +749,18 @@ exports.sendAttendancePush = (0, firestore_1.onDocumentUpdated)({
         const abnormalStatuses = ["early_leave_pending", "pending_overtime", "pending_approval", "Unplanned"];
         if (status && abnormalStatuses.includes(status)) {
             const staffId = after.staffId;
-            const workerName = after.workerName;
+            let workerName = after.workerName;
+            if (!workerName && staffId) {
+                try {
+                    const workerDoc = await admin.firestore().collection(`stores/${storeId}/workers`).doc(staffId).get();
+                    if (workerDoc.exists) {
+                        workerName = workerDoc.data()?.name;
+                    }
+                }
+                catch (err) {
+                    firebase_functions_1.logger.error("Failed to fetch worker name for clockOut push", err);
+                }
+            }
             const name = workerName ?? staffId ?? "직원";
             const topic = `store_${storeId}_boss`;
             let pushTitle = "🔔 근태 알림";
@@ -801,7 +812,18 @@ exports.sendAttendanceCreatedPush = (0, firestore_1.onDocumentCreated)({
     if (!status || !abnormalStatuses.includes(status))
         return;
     const staffId = data.staffId;
-    const workerName = data.workerName;
+    let workerName = data.workerName;
+    if (!workerName && staffId) {
+        try {
+            const workerDoc = await admin.firestore().collection(`stores/${storeId}/workers`).doc(staffId).get();
+            if (workerDoc.exists) {
+                workerName = workerDoc.data()?.name;
+            }
+        }
+        catch (err) {
+            firebase_functions_1.logger.error("Failed to fetch worker name for attendance push", err);
+        }
+    }
     const name = workerName ?? staffId ?? "직원";
     const topic = `store_${storeId}_boss`;
     const pushTitle = status === "Unplanned"

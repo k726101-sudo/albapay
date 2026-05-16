@@ -277,10 +277,52 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
   Future<void> _finalizeTermination() async {
     setState(() => _isProcessing = true);
     try {
+      final storeId = await WorkerService.resolveStoreId();
+      
+      // 1. 퇴사 정산 내역(Exit Settlement)을 문서 컬렉션에 영구 보존
+      if (storeId.isNotEmpty) {
+        final docType = DocumentType.exit_settlement;
+        final docId = '${widget.worker.id}_${docType.name}_${widget.exitDate.millisecondsSinceEpoch}';
+        final now = AppClock.now();
+        
+        final dataJson = jsonEncode(_result.toMap());
+        final content = '퇴직금: ${_result.severancePay.toInt()}원, 연차수당: ${_result.annualLeavePayout.toInt()}원, 당월급여: ${_result.exitMonthWage.toInt()}원';
+        
+        final documentHash = SecurityMetadataHelper.generateDocumentHash(
+          type: docType.name,
+          staffId: widget.worker.id,
+          content: content,
+          dataJson: dataJson,
+          createdAt: now.toIso8601String(),
+        );
+
+        final laborDoc = LaborDocument(
+          id: docId,
+          staffId: widget.worker.id,
+          storeId: storeId,
+          type: docType,
+          status: 'completed', // 저장 즉시 완료 처리
+          title: '퇴사 정산서',
+          content: content,
+          dataJson: dataJson,
+          createdAt: now,
+          documentHash: documentHash,
+        );
+
+        await FirebaseFirestore.instance
+            .collection('stores')
+            .doc(storeId)
+            .collection('documents')
+            .doc(docId)
+            .set(laborDoc.toMap());
+      }
+
+      // 2. 직원 비활성화 (status: inactive)
       await WorkerService.deactivate(
         widget.worker.id,
         widget.exitDate.toIso8601String().substring(0, 10),
       );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${widget.worker.name}님의 퇴사 처리가 완료되었습니다.')),
@@ -450,7 +492,7 @@ class _ExitSettlementReportScreenState extends State<ExitSettlementReportScreen>
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1a1a2e)),
             child: _isProcessing
                 ? const CircularProgressIndicator(color: Colors.white)
-                : const Text('최종 퇴사 처리 로컬 저장', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                : const Text('최종 퇴사 처리 및 정산서 보관', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           ),
         ),
       ],

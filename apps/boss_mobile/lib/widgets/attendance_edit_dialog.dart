@@ -93,13 +93,20 @@ class _AttendanceEditDialogState extends State<_AttendanceEditDialog> {
             DropdownButton<String>(
               isExpanded: true,
               value: _status,
-              items: const [
-                DropdownMenuItem(value: 'Normal', child: Text('정상 (Normal)')),
-                DropdownMenuItem(value: 'pending_approval', child: Text('승인 대기')),
-                DropdownMenuItem(value: 'pending_overtime', child: Text('연장 신청 대기')),
-                DropdownMenuItem(value: 'Unplanned', child: Text('스케줄 외')),
-                DropdownMenuItem(value: 'early_clock_out', child: Text('조기 퇴근')),
-              ],
+              items: {
+                'Normal': '정상 (Normal)',
+                'pending_approval': '승인 대기',
+                'pending_overtime': '연장 신청 대기',
+                'Unplanned': '스케줄 외',
+                'early_clock_out': '조기 퇴근',
+                'AUTO_CONFIRMED': '정상 (확정 완료)',
+                'AUTO_PENDING': '자동생성 (확인 대기)',
+                'EDITED': '수정됨',
+                'LOCKED': '마감됨',
+                'REOPENED': '마감 해제됨',
+                if (!['Normal', 'pending_approval', 'pending_overtime', 'Unplanned', 'early_clock_out', 'AUTO_CONFIRMED', 'AUTO_PENDING', 'EDITED', 'LOCKED', 'REOPENED'].contains(_status))
+                  _status: _status,
+              }.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
               onChanged: (val) {
                 if (val != null) setState(() => _status = val);
               },
@@ -138,6 +145,36 @@ class _AttendanceEditDialogState extends State<_AttendanceEditDialog> {
       // 야간 철야 등으로 수정 시 실수로 퇴근 날짜를 하루 뒤로 설정하지 않았을 경우 자동 보정
       if (finalOut != null && finalOut.isBefore(_in)) {
         finalOut = finalOut.add(const Duration(days: 1));
+      }
+
+      if (finalOut != null) {
+        // 같은 날(동시간대) 근무 중복(필터링) 체크
+        final existingSnap = await FirebaseFirestore.instance
+            .collection('attendance')
+            .where('storeId', isEqualTo: widget.attendance.storeId)
+            .where('staffId', isEqualTo: widget.attendance.staffId)
+            .get();
+
+        for (final doc in existingSnap.docs) {
+          if (doc.id == widget.attendance.id) continue;
+          final existing = Attendance.fromJson(doc.data(), id: doc.id);
+          if (existing.clockOut == null) continue;
+          
+          // 겹치는지 확인 (start1 < end2 && start2 < end1)
+          final overlap = _in.isBefore(existing.clockOut!) && existing.clockIn.isBefore(finalOut);
+          if (overlap) {
+            if (mounted) {
+              setState(() => _isSaving = false);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('⚠️ 이미 해당 시간에 다른 근무 기록이 존재합니다. (중복 근무 불가)'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+        }
       }
 
       final updated = Attendance(

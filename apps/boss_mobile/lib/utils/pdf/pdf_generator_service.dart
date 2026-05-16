@@ -238,6 +238,12 @@ class PdfGeneratorService {
                         '관련 법령 및 내부 기준에 따라 공제될 수 있습니다.',
                         style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
                     ],
+                    if (contractData['isPaidBreak'] == true) ...[
+                      pw.SizedBox(height: 6),
+                      pw.Text('[특약] 유급 휴게시간', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.grey800)),
+                      pw.Text('휴게시간은 업무 상황에 따라 변동될 수 있으며, 실제 사용하지 못한 휴게시간은 근로시간에 포함하여 계산합니다.',
+                        style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                    ],
                   ],
                 ),
               ),
@@ -488,6 +494,11 @@ class PdfGeneratorService {
               infoRow('7. 사회보험적용여부 : ', _buildInsuranceText(contractData['insurance']), font),
               pw.SizedBox(height: 6),
               infoRow('8. 기타 : ', '이 계약에 정함이 없는 사항은 근로기준법령에 의함', font),
+              if (contractData['isPaidBreak'] == true) ...[
+                pw.SizedBox(height: 6),
+                pw.Text('[특약] 유급 휴게시간: 휴게시간은 업무 상황에 따라 변동될 수 있으며, 실제 사용하지 못한 휴게시간은 근로시간에 포함하여 계산합니다.',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.grey700)),
+              ],
               pw.SizedBox(height: 6),
               pw.Text('9. 근로계약서 교부 :', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
               pw.SizedBox(height: 2),
@@ -745,6 +756,8 @@ class PdfGeneratorService {
                       _pdfTableRow(['주휴수당', '${wageData['weeklyHolidayPay']?.toInt()}', '${_fH(weekH)}시간 × ${_fHW(hourlyRate)}원 (주휴 발생 기준이 되는 시간 명시)'], font),
                     if ((wageData['breakPay'] as num? ?? 0) > 0)
                       _pdfTableRow(['유급휴게수당', '${wageData['breakPay']?.toInt()}', '${_fH(breakH)}시간 × ${_fHW(hourlyRate)}원 (휴게로 인정해 준 총시간 명시)'], font),
+                    if ((wageData['laborDayAllowancePay'] as num? ?? 0) > 0)
+                      _pdfTableRow(['근로자의 날 유급휴일수당', '${wageData['laborDayAllowancePay']?.toInt()}', '(${_fH((hourlyRate > 0 ? (wageData['laborDayAllowancePay'] as num) / hourlyRate : 0.0) * 5.0)} / 40시간) × 8시간 × ${_fHW(hourlyRate)}원'], font),
                     if ((wageData['otherAllowancePay'] as num? ?? 0) > 0)
                       _pdfTableRow(['기타수당', '${wageData['otherAllowancePay']?.toInt()}', '-'], font),
                     _pdfTableRow(['지급액 합계 (세전총지급액)', '${(wageData['totalPay'] as num?)?.toInt() ?? 0}', '기본급 + 제수당 합계'], font),
@@ -752,8 +765,21 @@ class PdfGeneratorService {
                     if ((wageData['mealNonTaxable'] as num? ?? 0) > 0)
                       _pdfTableRow(['└ (포함) 비과세 식대', '${(wageData['mealNonTaxable'] as num?)?.toInt()}', '과세 대상액 산정 시 제외금액'], font),
                       
-                    if ((wageData['insuranceDeduction'] as num? ?? 0) > 0)
-                      _pdfTableRow(['4대보험 등 공제액', '-${(wageData['insuranceDeduction'] as num?)?.toInt()}', '과세 대상액의 약 9.4% 예상치'], font),
+                    if ((wageData['insuranceDeduction'] as num? ?? 0) > 0) ...[
+                      _pdfTableRow(['4대보험 및 세금 공제액', '-${(wageData['insuranceDeduction'] as num?)?.toInt()}', '과세 대상액 기준'], font),
+                      if ((wageData['nationalPension'] as num? ?? 0) > 0)
+                        _pdfTableRow(['  └ 국민연금', '-${(wageData['nationalPension'] as num?)?.toInt()}', '-'], font),
+                      if ((wageData['healthInsurance'] as num? ?? 0) > 0)
+                        _pdfTableRow(['  └ 건강보험', '-${(wageData['healthInsurance'] as num?)?.toInt()}', '-'], font),
+                      if ((wageData['longTermCareInsurance'] as num? ?? 0) > 0)
+                        _pdfTableRow(['  └ 장기요양보험', '-${(wageData['longTermCareInsurance'] as num?)?.toInt()}', '-'], font),
+                      if ((wageData['employmentInsurance'] as num? ?? 0) > 0)
+                        _pdfTableRow(['  └ 고용보험', '-${(wageData['employmentInsurance'] as num?)?.toInt()}', '-'], font),
+                      if ((wageData['businessIncomeTax'] as num? ?? 0) > 0)
+                        _pdfTableRow(['  └ 사업소득세 (3%)', '-${(wageData['businessIncomeTax'] as num?)?.toInt()}', '-'], font),
+                      if ((wageData['localIncomeTax'] as num? ?? 0) > 0)
+                        _pdfTableRow(['  └ 지방소득세 (0.3%)', '-${(wageData['localIncomeTax'] as num?)?.toInt()}', '-'], font),
+                    ],
                       
                     if ((wageData['previousMonthAdjustment'] as num? ?? 0) != 0)
                       _pdfTableRow(['전월 이월/정산금', '${(wageData['previousMonthAdjustment'] as num?)?.toInt()}', '별도 등록된 이월/정산금'], font),

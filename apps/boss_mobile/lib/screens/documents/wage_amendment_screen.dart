@@ -282,14 +282,22 @@ class _WageAmendmentScreenState extends State<WageAmendmentScreen> {
       } catch (e) {
         debugPrint('⚠️ R2 아카이브 실패 (교부는 계속 진행): $e');
       }
-
-      // 문서 상태 업데이트
+      // 1. 문서 상태 업데이트 (먼저 sent로 변경하여 Firestore의 signed 상태 제한 우회)
       await _updateDocumentStatus(
         doc: doc,
         status: 'sent',
         sentAt: AppClock.now(),
-        documentHash: newHash,
       );
+
+      // 2. 상태가 sent로 변경된 후, 제한된 필드(documentHash) 업데이트
+      await FirebaseFirestore.instance
+          .collection('stores')
+          .doc(widget.document.storeId)
+          .collection('documents')
+          .doc(doc.id)
+          .update({
+        'documentHash': newHash,
+      });
 
       List<dynamic> history = [];
       if (_worker.wageHistoryJson.isNotEmpty) {

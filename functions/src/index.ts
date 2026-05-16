@@ -833,7 +833,19 @@ export const sendAttendancePush = onDocumentUpdated(
       const abnormalStatuses = ["early_leave_pending", "pending_overtime", "pending_approval", "Unplanned"];
       if (status && abnormalStatuses.includes(status)) {
         const staffId = after.staffId as string | undefined;
-        const workerName = after.workerName as string | undefined;
+        let workerName = after.workerName as string | undefined;
+
+        if (!workerName && staffId) {
+          try {
+            const workerDoc = await admin.firestore().collection(`stores/${storeId}/workers`).doc(staffId).get();
+            if (workerDoc.exists) {
+              workerName = workerDoc.data()?.name as string | undefined;
+            }
+          } catch (err) {
+            logger.error("Failed to fetch worker name for clockOut push", err);
+          }
+        }
+
         const name = workerName ?? staffId ?? "직원";
         const topic = `store_${storeId}_boss`;
 
@@ -891,7 +903,19 @@ export const sendAttendanceCreatedPush = onDocumentCreated(
     if (!status || !abnormalStatuses.includes(status)) return;
 
     const staffId = data.staffId as string | undefined;
-    const workerName = data.workerName as string | undefined;
+    let workerName = data.workerName as string | undefined;
+
+    if (!workerName && staffId) {
+      try {
+        const workerDoc = await admin.firestore().collection(`stores/${storeId}/workers`).doc(staffId).get();
+        if (workerDoc.exists) {
+          workerName = workerDoc.data()?.name as string | undefined;
+        }
+      } catch (err) {
+        logger.error("Failed to fetch worker name for attendance push", err);
+      }
+    }
+
     const name = workerName ?? staffId ?? "직원";
 
     const topic = `store_${storeId}_boss`;

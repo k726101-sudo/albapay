@@ -496,6 +496,8 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
           maxChildSize: 0.9,
           expand: false,
           builder: (_, scrollController) {
+            String _fH(double h) => h == h.toInt() ? h.toInt().toString() : h.toStringAsFixed(1);
+            String _fW(num amt) => amt.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
             PayrollCalculationResult summary = initialSummary;
             PayrollWorkerData currentWorkerData = workerData;
             return StatefulBuilder(
@@ -558,12 +560,50 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                   if (summary.mealNonTaxable > 0)
                     _detailRow('└ 비과세 식대 (보험료 제외)', '-${summary.mealNonTaxable.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원', color: Colors.green.shade700, fontSize: 13),
 
-                  _detailRow(
-                    '4대 보험 공제 (예상)', 
-                    '-${summary.insuranceDeduction.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원', 
-                    color: Colors.grey.shade700,
-                    subtext: '(과세 대상 ${summary.taxableWage.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원의 9.4%)',
-                  ),
+                  if (summary.insuranceDeduction > 0)
+                    Theme(
+                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: const EdgeInsets.only(left: 16, right: 0, bottom: 8),
+                        title: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              workerData.applyWithholding33 ? '세금 공제 (3.3%)' : '4대 보험 공제 (예상)',
+                              style: TextStyle(fontSize: 14, color: Colors.grey.shade800),
+                            ),
+                            Text(
+                              '-${_fW(summary.insuranceDeduction)}원',
+                              style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                            ),
+                          ],
+                        ),
+                        subtitle: Text(
+                          workerData.applyWithholding33
+                              ? '(과세 대상 ${_fW(summary.taxableWage)}원의 3.3%)'
+                              : '(과세 대상 ${_fW(summary.taxableWage)}원의 9.4%)',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                        ),
+                        children: [
+                          if (workerData.applyWithholding33) ...[
+                            if (summary.businessIncomeTax > 0)
+                              _detailRow('└ 사업소득세 (3%)', '-${_fW(summary.businessIncomeTax)}원', color: Colors.grey.shade600, fontSize: 13),
+                            if (summary.localIncomeTax > 0)
+                              _detailRow('└ 지방소득세 (0.3%)', '-${_fW(summary.localIncomeTax)}원', color: Colors.grey.shade600, fontSize: 13),
+                          ] else ...[
+                            if (summary.nationalPension > 0)
+                              _detailRow('└ 국민연금 (4.5%)', '-${_fW(summary.nationalPension)}원', color: Colors.grey.shade600, fontSize: 13),
+                            if (summary.healthInsurance > 0)
+                              _detailRow('└ 건강보험 (3.545%)', '-${_fW(summary.healthInsurance)}원', color: Colors.grey.shade600, fontSize: 13),
+                            if (summary.longTermCareInsurance > 0)
+                              _detailRow('└ 장기요양보험 (건보료의 12.95%)', '-${_fW(summary.longTermCareInsurance)}원', color: Colors.grey.shade600, fontSize: 13),
+                            if (summary.employmentInsurance > 0)
+                              _detailRow('└ 고용보험 (0.9%)', '-${_fW(summary.employmentInsurance)}원', color: Colors.grey.shade600, fontSize: 13),
+                          ],
+                        ],
+                      ),
+                    ),
                   
                   // 전월 정산금 입력 행
                   ListTile(
@@ -624,8 +664,6 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                   ),
                   Builder(
                     builder: (context) {
-                      String _fH(double h) => h == h.toInt() ? h.toInt().toString() : h.toStringAsFixed(1);
-                      String _fW(num amt) => amt.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
                       final hw = staff.hourlyWage;
                       final wH = hw > 0 ? summary.weeklyHolidayPay / hw : 0.0;
                       // 시급 분리 표시 (임금변경합의서 반영)
@@ -757,6 +795,23 @@ class _PayrollReportPageState extends State<PayrollReportPage> {
                           }),
                           if (summary.breakPay > 0)
                             _detailRow('유급휴게수당', '+${_fW(summary.breakPay)}원', subtext: '${_fH(summary.paidBreakHours)}시간 × ${_fW(hw)}원 (휴게로 인정해 준 총시간 명시)'),
+                          if (summary.laborDayAllowancePay > 0)
+                            Builder(
+                              builder: (context) {
+                                final allowanceHours = hw > 0 ? summary.laborDayAllowancePay / hw : 0.0;
+                                final calcHours = allowanceHours * 5.0;
+                                return _detailRow(
+                                  '근로자의 날 유급휴일수당', 
+                                  '+${_fW(summary.laborDayAllowancePay)}원', 
+                                  color: Colors.blueAccent, 
+                                  subtext: '(${_fH(calcHours)} / 40시간) × 8시간 × ${_fW(hw)}원'
+                                );
+                              },
+                            )
+                          else if (staff.wageType == 'monthly' && periodStart.month <= 5 && periodEnd.month >= 5)
+                            _detailRow('근로자의 날 유급휴일수당', '월급(기본급)에 기포함', color: Colors.blueGrey),
+                          if (summary.holidayPremiumPay > 0)
+                            _detailRow('근로자의 날 휴일근로가산', '+${_fW(summary.holidayPremiumPay)}원', color: Colors.orange.shade800),
                           if (summary.otherAllowancePay > 0)
                             _detailRow('기타 수당', '+${_fW(summary.otherAllowancePay)}원'),
                         ],

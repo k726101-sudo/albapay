@@ -506,7 +506,9 @@ class AlbaPayrollPage extends StatelessWidget {
                                               final calcHours = allowanceHours * 5.0;
                                               return _payRow('근로자의 날 유급휴일수당', result!.laborDayAllowancePay, color: Colors.blueAccent, subtitle: '(${_fmtH(calcHours)} / 40시간) × 8시간 × $rateText');
                                             },
-                                          ),
+                                          )
+                                        else if (worker['wageType'] == 'monthly' && period.start.month <= 5 && period.end.month >= 5)
+                                          _payRow('근로자의 날 유급휴일수당', 0, subtitle: '월급(기본급)에 기포함', color: Colors.blueGrey),
                                         
                                         if (result.weeklyHolidayPay > 0)
                                           _payRow('주휴 수당', result.weeklyHolidayPay, subtitle: '${_fmtH(wH)} × $rateText')

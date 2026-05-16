@@ -143,6 +143,7 @@ service cloud.firestore {
           (isStoreOwner(storeId) &&
             // signed 상태 문서의 법적 증빙 필드 변경 차단 (immutable 정책)
             !(resource.data.get('status', '') == 'signed' &&
+              request.resource.data.get('status', '') == 'signed' &&
               request.resource.data.diff(resource.data).affectedKeys().hasAny([
                 'pdfHash', 'pdfR2DocId', 'documentHash', 'content', 'dataJson'
               ])

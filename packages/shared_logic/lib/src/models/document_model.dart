@@ -15,6 +15,7 @@ enum DocumentType {
   resignation_letter,
 
   // 추가 스펙 (LDMS)
+  exit_settlement, // 퇴사 정산서
   attendance_record,
   wage_ledger,
   annual_leave_ledger,

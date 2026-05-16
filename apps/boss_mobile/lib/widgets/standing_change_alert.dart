@@ -1,10 +1,22 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_logic/shared_logic.dart';
+
+import '../models/worker.dart';
 
 import '../utils/standing_calculator.dart';
 import '../services/worker_service.dart';
 import '../screens/documents/create_document_screen.dart';
+
+StandingResult _computeStanding(Map<String, dynamic> args) {
+  return calculateStandingFromAttendances(
+    attendances: args['attendances'] as List<Attendance>,
+    periodStart: args['periodStart'] as DateTime,
+    periodEnd: args['periodEnd'] as DateTime,
+    staffList: args['staffList'] as List<Worker>,
+  );
+}
 
 class StandingChangeAlert extends StatefulWidget {
   const StandingChangeAlert({super.key, required this.storeId});
@@ -42,7 +54,10 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
           .doc(widget.storeId)
           .get();
 
-      if (!storeSnap.exists) { debugPrint('[StandingAlert] ✕ store 없음'); return; }
+      if (!storeSnap.exists) {
+        debugPrint('[StandingAlert] ✕ store 없음');
+        return;
+      }
       final storeData = storeSnap.data() ?? {};
 
       // ── Rolling 30일: 근로기준법 시행령 제7조의2 (산정 사유 발생일 전 1개월) ──
@@ -64,9 +79,9 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
           .map((d) {
             final clockInStr = d.data()['clockIn']?.toString() ?? '';
             final clockInDate = DateTime.tryParse(clockInStr);
-            
-            if (clockInDate != null && 
-                !clockInDate.isBefore(rollingStart) && 
+
+            if (clockInDate != null &&
+                !clockInDate.isBefore(rollingStart) &&
                 clockInDate.isBefore(limitEnd)) {
               return Attendance.fromJson(d.data(), id: d.id);
             }
@@ -79,16 +94,18 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
           .where((w) => w.workerType != 'dispatch')
           .toList();
 
-      final standing = calculateStandingFromAttendances(
-        attendances: attendances,
-        periodStart: rollingStart,
-        periodEnd: rollingEnd,
-        staffList: staffList,
-      );
+      final standing = await compute(_computeStanding, {
+        'attendances': attendances,
+        'periodStart': rollingStart,
+        'periodEnd': rollingEnd,
+        'staffList': staffList,
+      });
 
-      debugPrint('[StandingAlert] 계산: 평균=${standing.average.toStringAsFixed(2)}, '
-          '가동일=${standing.operatingDays}, 5인↑=${standing.daysWithFiveOrMore}, '
-          'att=${attendances.length}건, staff=${staffList.length}명');
+      debugPrint(
+        '[StandingAlert] 계산: 평균=${standing.average.toStringAsFixed(2)}, '
+        '가동일=${standing.operatingDays}, 5인↑=${standing.daysWithFiveOrMore}, '
+        'att=${attendances.length}건, staff=${staffList.length}명',
+      );
 
       final currentIsFive = standing.isFiveOrMore;
       final currentIsTen = standing.isTenOrMore;
@@ -110,8 +127,10 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
           .doc(widget.storeId)
           .set(storeUpdate, SetOptions(merge: true));
 
-      debugPrint('[StandingAlert] ✅ store 갱신 완료: '
-          '평균=${standing.average.toStringAsFixed(2)}, 5인↑=${standing.daysWithFiveOrMore}/${standing.operatingDays}일');
+      debugPrint(
+        '[StandingAlert] ✅ store 갱신 완료: '
+        '평균=${standing.average.toStringAsFixed(2)}, 5인↑=${standing.daysWithFiveOrMore}/${standing.operatingDays}일',
+      );
 
       // ── 2. 변동 알림용 standingMeta (실패해도 핵심 기능에 영향 없음) ──
       try {
@@ -144,10 +163,14 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
             hasTenLast && lastIsTen == true && currentIsTen == false;
 
         // ── 월급제 직원 중 고정연장수당이 있는 직원 수 (근로계약서 재작성 대상) ──
-        final monthlyWorkersAffected = staffList.where((w) =>
-            w.status == 'active' &&
-            w.wageType == 'monthly' &&
-            w.fixedOvertimePay > 0).length;
+        final monthlyWorkersAffected = staffList
+            .where(
+              (w) =>
+                  w.status == 'active' &&
+                  w.wageType == 'monthly' &&
+                  w.fixedOvertimePay > 0,
+            )
+            .length;
 
         if (!metaSnap.exists) {
           _showSnack(
@@ -186,9 +209,7 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
         if (!metaSnap.exists && currentIsTen) {
           await _showTenOrMoreChecklistDialog();
         } else if (shouldAlarmTenFlipToOver) {
-          _showSnack(
-            message: '주의: 상시근로자 10인 이상으로 바뀌었습니다. 취업규칙 신고 의무를 확인하세요.',
-          );
+          _showSnack(message: '주의: 상시근로자 10인 이상으로 바뀌었습니다. 취업규칙 신고 의무를 확인하세요.');
           await _showTenOrMoreChecklistDialog();
         } else if (shouldAlarmTenFlipToUnder) {
           _showSnack(
@@ -196,22 +217,21 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
           );
         }
 
-        await metaRef.set(
-          {
-            'periodKey': periodKey,
-            'isFiveLast': currentIsFive,
-            'isTenLast': currentIsTen,
-            'average': standing.average,
-            'daysWithFiveOrMore': standing.daysWithFiveOrMore,
-            'daysWithTenOrMore': standing.daysWithTenOrMore,
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
+        await metaRef.set({
+          'periodKey': periodKey,
+          'isFiveLast': currentIsFive,
+          'isTenLast': currentIsTen,
+          'average': standing.average,
+          'daysWithFiveOrMore': standing.daysWithFiveOrMore,
+          'daysWithTenOrMore': standing.daysWithTenOrMore,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
         debugPrint('[StandingAlert] ✅ standingMeta 갱신 완료');
       } catch (metaErr) {
         // standingMeta 접근 실패해도 대시보드 핵심 기능에는 영향 없음
-        debugPrint('[StandingAlert] ⚠️ standingMeta 접근 실패 (대시보드 갱신은 정상): $metaErr');
+        debugPrint(
+          '[StandingAlert] ⚠️ standingMeta 접근 실패 (대시보드 갱신은 정상): $metaErr',
+        );
       }
     } catch (e, st) {
       debugPrint('[StandingAlert] ❌ 에러: $e');
@@ -251,10 +271,7 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
   void _showSnack({required String message}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -284,11 +301,11 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
 
     final String body = isUpgrade
         ? '추정 상시근로자 수가 5인 미만 → 5인 이상으로 변동되었습니다.\n'
-          '사업장 운영 형태에 따라 가산율이 1.0배 → 1.5배로 변경될 수 있으므로,\n'
-          '월급제 직원($_affectedMonthlyCount명)의 근로계약서 확인을 권장합니다.'
+              '사업장 운영 형태에 따라 가산율이 1.0배 → 1.5배로 변경될 수 있으므로,\n'
+              '월급제 직원($_affectedMonthlyCount명)의 근로계약서 확인을 권장합니다.'
         : '추정 상시근로자 수가 5인 이상 → 5인 미만으로 변동되었습니다.\n'
-          '사업장 운영 형태에 따라 가산율이 1.5배 → 1.0배로 변경될 수 있으므로,\n'
-          '월급제 직원($_affectedMonthlyCount명)의 근로계약서 확인을 권장합니다.';
+              '사업장 운영 형태에 따라 가산율이 1.5배 → 1.0배로 변경될 수 있으므로,\n'
+              '월급제 직원($_affectedMonthlyCount명)의 근로계약서 확인을 권장합니다.';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -331,7 +348,11 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
                   borderRadius: BorderRadius.circular(12),
                   child: Padding(
                     padding: const EdgeInsets.all(4),
-                    child: Icon(Icons.close, size: 18, color: textColor.withOpacity(0.6)),
+                    child: Icon(
+                      Icons.close,
+                      size: 18,
+                      color: textColor.withOpacity(0.6),
+                    ),
                   ),
                 ),
               ],
@@ -377,12 +398,20 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
                   child: ElevatedButton.icon(
                     onPressed: () => _showAffectedWorkersSheet(context),
                     icon: const Icon(Icons.description_outlined, size: 16),
-                    label: const Text('근로계약서 재작성', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    label: const Text(
+                      '근로계약서 재작성',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: borderColor,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ),
@@ -392,8 +421,13 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: textColor,
                     side: BorderSide(color: borderColor.withOpacity(0.5)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   child: const Text('나중에', style: TextStyle(fontSize: 12)),
                 ),
@@ -409,12 +443,20 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.check_circle_outline, size: 14, color: color.withOpacity(0.7)),
+        Icon(
+          Icons.check_circle_outline,
+          size: 14,
+          color: color.withOpacity(0.7),
+        ),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
             text,
-            style: TextStyle(fontSize: 11, color: color.withOpacity(0.85), height: 1.3),
+            style: TextStyle(
+              fontSize: 11,
+              color: color.withOpacity(0.85),
+              height: 1.3,
+            ),
           ),
         ),
       ],
@@ -423,21 +465,25 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
 
   void _showAffectedWorkersSheet(BuildContext ctx) {
     final monthlyWorkers = WorkerService.getAll()
-        .where((w) =>
-            w.status == 'active' &&
-            w.wageType == 'monthly' &&
-            w.fixedOvertimePay > 0)
+        .where(
+          (w) =>
+              w.status == 'active' &&
+              w.wageType == 'monthly' &&
+              w.fixedOvertimePay > 0,
+        )
         .toList();
 
     if (monthlyWorkers.isEmpty) {
-      ScaffoldMessenger.of(ctx).showSnackBar(
-        const SnackBar(content: Text('해당하는 월급제 직원이 없습니다.')),
-      );
+      ScaffoldMessenger.of(
+        ctx,
+      ).showSnackBar(const SnackBar(content: Text('해당하는 월급제 직원이 없습니다.')));
       return;
     }
 
     String _fmtMoney(double v) => v.toInt().toString().replaceAllMapped(
-        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]},',
+    );
 
     showModalBottomSheet<void>(
       context: ctx,
@@ -454,12 +500,19 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.people_alt_outlined, size: 20, color: Color(0xFFE65100)),
+                  const Icon(
+                    Icons.people_alt_outlined,
+                    size: 20,
+                    color: Color(0xFFE65100),
+                  ),
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
                       '근로계약서 재작성 대상 직원',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -476,63 +529,78 @@ class _StandingChangeAlertState extends State<StandingChangeAlert> {
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
               const Divider(height: 20),
-              ...monthlyWorkers.map((w) => InkWell(
-                    onTap: () {
-                      Navigator.pop(sheetCtx);
-                      Navigator.push(
-                        ctx,
-                        MaterialPageRoute(
-                          builder: (_) => CreateDocumentScreen(
-                            worker: w,
-                            storeId: w.storeId,
+              ...monthlyWorkers.map(
+                (w) => InkWell(
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    Navigator.push(
+                      ctx,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            CreateDocumentScreen(worker: w, storeId: w.storeId),
+                      ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 12,
+                    ),
+                    margin: const EdgeInsets.only(bottom: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: const Color(
+                            0xFFFF9800,
+                          ).withOpacity(0.15),
+                          child: Text(
+                            w.name.isNotEmpty ? w.name[0] : '?',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFE65100),
+                            ),
                           ),
                         ),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                      margin: const EdgeInsets.only(bottom: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 18,
-                            backgroundColor: const Color(0xFFFF9800).withOpacity(0.15),
-                            child: Text(
-                              w.name.isNotEmpty ? w.name[0] : '?',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFFE65100),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                w.name,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  w.name,
-                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                              const SizedBox(height: 2),
+                              Text(
+                                '기본급 ${_fmtMoney(w.monthlyWage)}원 · 고정OT ${_fmtMoney(w.fixedOvertimePay)}원',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade600,
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '기본급 ${_fmtMoney(w.monthlyWage)}원 · 고정OT ${_fmtMoney(w.fixedOvertimePay)}원',
-                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                          const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
-                        ],
-                      ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right,
+                          size: 20,
+                          color: Colors.grey,
+                        ),
+                      ],
                     ),
-                  )),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

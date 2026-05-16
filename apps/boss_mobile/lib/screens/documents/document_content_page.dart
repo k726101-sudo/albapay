@@ -207,6 +207,7 @@ class _DocumentContentPageState extends State<DocumentContentPage> {
       'endTime': worker.checkOutTime,
       'breakStart': worker.breakStartTime,
       'breakEnd': worker.breakEndTime,
+      'isPaidBreak': worker.isPaidBreak,
       'workDaysInfo': _formatWorkDays(worker.workDays),
       'weeklyHoliday': _weeklyHolidayText(worker),
       'wageType': worker.wageType,

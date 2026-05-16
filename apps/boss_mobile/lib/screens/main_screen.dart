@@ -29,6 +29,7 @@ import 'health/health_certificate_alert_management_screen.dart';
 import '../utils/renewal_engine.dart';
 import 'documents/contract_renewal_screen.dart';
 import 'alba/alba_main_screen.dart';
+import 'dashboard_todays_schedule.dart';
 
 /// 출근 승인 시 급여 반영 기준 (pending 전용)
 enum _PendingClockInApprove { payrollScheduled, actualPunch }
@@ -72,7 +73,7 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Bottom nav: 0 dashboard/pageview, 1..3 additional tabs.
   int _bottomIndex = 0;
-  
+
   /// Sub-tab notice routing index
   int _subIndex = 0;
 
@@ -92,7 +93,9 @@ class _MainScreenState extends State<MainScreen> {
   OverlayEntry? _onboardingOverlay;
 
   void _goToSettingsTab() {
-    setState(() => _bottomIndex = 4); // Settings is now at index 4 due to Notice/Education tab
+    setState(
+      () => _bottomIndex = 4,
+    ); // Settings is now at index 4 due to Notice/Education tab
   }
 
   void _goToNoticeTab(int index) {
@@ -130,7 +133,7 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await UserGuidePopup.showIfNeeded(context, GuideType.boss);
-      
+
       // 로그인 직후·계정 전환 후: 매장 Hive + 직원 Firestore + 실시간 구독을 현재 uid 기준으로 맞춤.
       // (앱 최초 실행 시 main()의 백그라운드 동기화만으로는, 나중에 로그인한 계정이 반영되지 않을 수 있음.)
       await StoreCacheService.syncFirestoreToHive();
@@ -144,17 +147,26 @@ class _MainScreenState extends State<MainScreen> {
       await WorkerService.syncFromFirebase();
       await WorkerService.startRealtimeSync();
       unawaited(WorkerService.enqueueProbationEndingAlerts());
-      
+
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null && storeId.isNotEmpty) {
-        final userSnap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        final userSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
         if (userSnap.data()?['isDemo'] == true) {
-          final attSnap = await FirebaseFirestore.instance.collection('attendance')
+          final attSnap = await FirebaseFirestore.instance
+              .collection('attendance')
               .where('storeId', isEqualTo: storeId)
-              .limit(1).get();
+              .limit(1)
+              .get();
           if (attSnap.docs.isEmpty) {
-            final workersSnap = await FirebaseFirestore.instance.collection('stores')
-                .doc(storeId).collection('workers').where('isDemo', isEqualTo: true).get();
+            final workersSnap = await FirebaseFirestore.instance
+                .collection('stores')
+                .doc(storeId)
+                .collection('workers')
+                .where('isDemo', isEqualTo: true)
+                .get();
             if (workersSnap.docs.isNotEmpty) {
               final dummyWorkers = workersSnap.docs.map((d) {
                 final data = d.data();
@@ -167,7 +179,9 @@ class _MainScreenState extends State<MainScreen> {
                   storeId: storeId,
                   workersData: dummyWorkers,
                 );
-                debugPrint('Re-seeded demo attendance data for existing demo store.');
+                debugPrint(
+                  'Re-seeded demo attendance data for existing demo store.',
+                );
               } catch (_) {}
             }
           }
@@ -179,7 +193,10 @@ class _MainScreenState extends State<MainScreen> {
 
       // 체험모드 감지
       if (uid != null && storeId.isNotEmpty) {
-        final demoCheck = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        final demoCheck = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
         if (demoCheck.data()?['isDemo'] == true && mounted) {
           setState(() {
             _isDemo = true;
@@ -193,7 +210,9 @@ class _MainScreenState extends State<MainScreen> {
 
       // MainScreen에 도달했으면 이미 로그인 완료 → login 단계 자동 완료
       if (OnboardingGuideService.instance.currentStep == OnboardingStep.login) {
-        await OnboardingGuideService.instance.completeStep(OnboardingStep.login);
+        await OnboardingGuideService.instance.completeStep(
+          OnboardingStep.login,
+        );
       }
 
       await OnboardingGuideService.instance.syncWithFirestore(
@@ -225,7 +244,8 @@ class _MainScreenState extends State<MainScreen> {
 
     // Step 2: 사업장 등록 안내 → 설정 탭을 가리킴
     if (guide.currentStep == OnboardingStep.storeSetup) {
-      final settingsBox = _settingsTabKey.currentContext?.findRenderObject() as RenderBox?;
+      final settingsBox =
+          _settingsTabKey.currentContext?.findRenderObject() as RenderBox?;
       if (settingsBox == null || !settingsBox.hasSize) {
         Future.delayed(const Duration(seconds: 1), () {
           if (mounted) _showOnboardingTooltipIfNeeded(retryCount + 1);
@@ -280,7 +300,9 @@ class _MainScreenState extends State<MainScreen> {
           targetColor: const Color(0xFF1a1a2e),
           onDismiss: () {
             _onboardingOverlay = null;
-            OnboardingGuideService.instance.completeStep(OnboardingStep.firstStaff);
+            OnboardingGuideService.instance.completeStep(
+              OnboardingStep.firstStaff,
+            );
           },
           onSkipAll: () {
             _onboardingOverlay = null;
@@ -291,7 +313,8 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     // Step 5: 계약서 작성 안내
-    if (guide.currentStep == OnboardingStep.createContract && _bottomIndex == 0) {
+    if (guide.currentStep == OnboardingStep.createContract &&
+        _bottomIndex == 0) {
       _onboardingOverlay?.remove();
       Future.delayed(const Duration(milliseconds: 600), () {
         if (!mounted) return;
@@ -305,7 +328,9 @@ class _MainScreenState extends State<MainScreen> {
           targetColor: const Color(0xFF1565C0),
           onDismiss: () {
             _onboardingOverlay = null;
-            OnboardingGuideService.instance.completeStep(OnboardingStep.createContract);
+            OnboardingGuideService.instance.completeStep(
+              OnboardingStep.createContract,
+            );
           },
           onSkipAll: () {
             _onboardingOverlay = null;
@@ -330,7 +355,9 @@ class _MainScreenState extends State<MainScreen> {
           targetColor: const Color(0xFF1a1a2e),
           onDismiss: () {
             _onboardingOverlay = null;
-            OnboardingGuideService.instance.completeStep(OnboardingStep.checkDashboard);
+            OnboardingGuideService.instance.completeStep(
+              OnboardingStep.checkDashboard,
+            );
             _onBottomNavTap(0);
           },
           onSkipAll: () {
@@ -371,7 +398,11 @@ class _MainScreenState extends State<MainScreen> {
           setState(() {
             _bottomIndex = 0;
             if (_pageController.hasClients) {
-              _pageController.animateToPage(0, duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
+              _pageController.animateToPage(
+                0,
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOut,
+              );
             }
           });
         }
@@ -380,145 +411,154 @@ class _MainScreenState extends State<MainScreen> {
       child: Scaffold(
         backgroundColor: MainScreen.kBodyBg,
         extendBody: false,
-      resizeToAvoidBottomInset: false,
-      body: IndexedStack(
-        index: _bottomIndex,
-        children: [
-          DashboardPageView(
-                  pageController: _pageController,
-                  pageViewIndex: _pageViewIndex,
-                  onPageChanged: (i) => setState(() => _pageViewIndex = i),
-                  onOpenSettings: _goToSettingsTab,
-                  onOpenNoticeTab: _goToNoticeTab,
-                ),
-                const StaffTabContent(),
-                NoticeEducationTabScreen(
-                  key: ValueKey(_subIndex),
-                  initialIndex: _subIndex,
-                ),
-                const DocumentsTabContent(),
-                const SettingsTabContent(),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _bottomIndex,
-        selectedItemColor: MainScreen.kBarBg,
-        unselectedItemColor: Colors.grey,
-        onTap: _onBottomNavTap,
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_outlined, key: _dashboardTabKey),
-            label: '대시보드',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline),
-            label: '직원',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.campaign_outlined),
-            label: '공지/교육',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.description_outlined, key: _docsTabKey),
-            label: '노무서류',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined, key: _settingsTabKey),
-            label: '설정',
-          ),
-        ],
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      persistentFooterButtons: _isDemo ? [
-        SizedBox(
-          width: double.infinity,
-          child: Material(
-            color: const Color(0xFF10B981),
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AlbaMainScreen(
-                      storeId: _demoStoreId,
-                      workerId: 'worker_a',
+        resizeToAvoidBottomInset: false,
+        body: IndexedStack(
+          index: _bottomIndex,
+          children: [
+            DashboardPageView(
+              pageController: _pageController,
+              pageViewIndex: _pageViewIndex,
+              onPageChanged: (i) => setState(() => _pageViewIndex = i),
+              onOpenSettings: _goToSettingsTab,
+              onOpenNoticeTab: _goToNoticeTab,
+            ),
+            const StaffTabContent(),
+            NoticeEducationTabScreen(
+              key: ValueKey(_subIndex),
+              initialIndex: _subIndex,
+            ),
+            const DocumentsTabContent(),
+            const SettingsTabContent(),
+          ],
+        ),
+        bottomNavigationBar: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          currentIndex: _bottomIndex,
+          selectedItemColor: MainScreen.kBarBg,
+          unselectedItemColor: Colors.grey,
+          onTap: _onBottomNavTap,
+          items: [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_outlined, key: _dashboardTabKey),
+              label: '대시보드',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.people_outline),
+              label: '직원',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.campaign_outlined),
+              label: '공지/교육',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.description_outlined, key: _docsTabKey),
+              label: '노무서류',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings_outlined, key: _settingsTabKey),
+              label: '설정',
+            ),
+          ],
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        persistentFooterButtons: _isDemo
+            ? [
+                SizedBox(
+                  width: double.infinity,
+                  child: Material(
+                    color: const Color(0xFF10B981),
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AlbaMainScreen(
+                              storeId: _demoStoreId,
+                              workerId: 'worker_a',
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.swap_horiz_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              '👷 알바가 보는 화면 체험하기',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                );
-              },
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 14),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                ),
+              ]
+            : null,
+        floatingActionButton: _bottomIndex == 0
+            ? Padding(
+                key: _fabKey,
+                padding: const EdgeInsets.only(bottom: 16),
+                child: SpeedDial(
+                  icon: Icons.add,
+                  activeIcon: Icons.close,
+                  backgroundColor: MainScreen.kBarBg,
+                  foregroundColor: Colors.white,
+                  overlayColor: Colors.black,
+                  overlayOpacity: 0.4,
+                  spacing: 10,
+                  spaceBetweenChildren: 8,
                   children: [
-                    Icon(Icons.swap_horiz_rounded, color: Colors.white, size: 22),
-                    SizedBox(width: 8),
-                    Text(
-                      '👷 알바가 보는 화면 체험하기',
-                      style: TextStyle(
+                    SpeedDialChild(
+                      child: const Icon(Icons.person_add, color: Colors.white),
+                      backgroundColor: const Color(0xFF378ADD),
+                      label: '직원 등록',
+                      labelStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      labelBackgroundColor: Colors.white,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const AddStaffScreen(),
+                        ),
+                      ),
+                    ),
+                    SpeedDialChild(
+                      child: const Icon(
+                        Icons.check_circle_outline,
                         color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
+                      ),
+                      backgroundColor: const Color(0xFF639922),
+                      label: '근무 승인',
+                      labelStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      labelBackgroundColor: Colors.white,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const ExceptionApprovalScreen(),
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ),
-          ),
-        ),
-      ] : null,
-      floatingActionButton: _bottomIndex == 0
-          ? Padding(
-              key: _fabKey,
-              padding: const EdgeInsets.only(bottom: 16),
-              child: SpeedDial(
-                icon: Icons.add,
-                activeIcon: Icons.close,
-                backgroundColor: MainScreen.kBarBg,
-                foregroundColor: Colors.white,
-                overlayColor: Colors.black,
-                overlayOpacity: 0.4,
-                spacing: 10,
-                spaceBetweenChildren: 8,
-                children: [
-                  SpeedDialChild(
-                    child: const Icon(Icons.person_add, color: Colors.white),
-                    backgroundColor: const Color(0xFF378ADD),
-                    label: '직원 등록',
-                    labelStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    labelBackgroundColor: Colors.white,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const AddStaffScreen(),
-                      ),
-                    ),
-                  ),
-                  SpeedDialChild(
-                    child: const Icon(Icons.check_circle_outline, color: Colors.white),
-                    backgroundColor: const Color(0xFF639922),
-                    label: '근무 승인',
-                    labelStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    labelBackgroundColor: Colors.white,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const ExceptionApprovalScreen(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : null,
+              )
+            : null,
       ),
     );
   }
@@ -582,7 +622,7 @@ class DashboardPage extends StatefulWidget {
 
 void _showRiskWarningDialog(BuildContext context, StoreInfo? store) {
   if (store == null) return;
-  
+
   final manualValue = store.isFiveOrMore;
   final calculatedValue = store.isFiveOrMoreCalculatedValue;
   final reason = store.isFiveOrMoreChangeReason;
@@ -612,7 +652,10 @@ void _showRiskWarningDialog(BuildContext context, StoreInfo? store) {
           Text('• 사장님 설정: ${manualValue ? "5인 이상" : "5인 미만"}'),
           if (reason.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Text('• 기록된 변경 사유:', style: TextStyle(color: Color(0xFF888888))),
+            const Text(
+              '• 기록된 변경 사유:',
+              style: TextStyle(color: Color(0xFF888888)),
+            ),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(8),
@@ -706,7 +749,8 @@ class _DashboardPageState extends State<DashboardPage> {
                         color: Colors.white,
                       ),
                     ),
-                    if (store?.isFiveOrMore != store?.isFiveOrMoreCalculatedValue) ...[
+                    if (store?.isFiveOrMore !=
+                        store?.isFiveOrMoreCalculatedValue) ...[
                       const SizedBox(width: 6),
                       MouseRegion(
                         cursor: SystemMouseCursors.click,
@@ -756,22 +800,27 @@ class _DashboardPageState extends State<DashboardPage> {
             valueListenable: Hive.box<Worker>('workers').listenable(),
             builder: (context, box, _) {
               final activeWorkers = WorkerService.getAll();
-              final dispatched = activeWorkers.where((w) => w.workerType == 'dispatch').length;
+              final dispatched = activeWorkers
+                  .where((w) => w.workerType == 'dispatch')
+                  .length;
               final regular = activeWorkers.length - dispatched;
               final healthRows = _healthAlertRows(activeWorkers);
               final storeId = activeWorkers
                   .map((w) => w.storeId)
                   .firstWhere((id) => id.trim().isNotEmpty, orElse: () => '');
-              
-              final bool showRenewalAlert = AppClock.now().year >= PayrollConstants.minimumWageEffectiveYear && RenewalEngine.hasPendingRenewals();
+
+              final bool showRenewalAlert =
+                  AppClock.now().year >=
+                      PayrollConstants.minimumWageEffectiveYear &&
+                  RenewalEngine.hasPendingRenewals();
 
               return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                 stream: storeId.isEmpty
                     ? null
                     : FirebaseFirestore.instance
-                        .collection('stores')
-                        .doc(storeId)
-                        .snapshots(),
+                          .collection('stores')
+                          .doc(storeId)
+                          .snapshots(),
                 builder: (context, storeSnap) {
                   final storeData = storeSnap.data?.data() ?? const {};
                   final sizeMode =
@@ -783,7 +832,8 @@ class _DashboardPageState extends State<DashboardPage> {
                   final storedTotalDays =
                       (storeData['totalBusinessDays'] as num?)?.toInt() ?? 0;
                   bool autoIsFiveOrMore =
-                      (storeData['isFiveOrMore'] as bool?) ?? (avgWorkers >= 5.0);
+                      (storeData['isFiveOrMore'] as bool?) ??
+                      (avgWorkers >= 5.0);
                   // 수동 고정 모드 우선 적용
                   bool isFiveOrMore;
                   if (sizeMode == 'manual_5plus') {
@@ -794,7 +844,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     isFiveOrMore = autoIsFiveOrMore;
                   }
                   bool isTenOrMore =
-                      (storeData['isTenOrMore'] as bool?) ?? (avgWorkers >= 10.0);
+                      (storeData['isTenOrMore'] as bool?) ??
+                      (avgWorkers >= 10.0);
 
                   // 초기 동기화 전에는 저장값이 비어 있을 수 있어, 0.0 대신
                   // 현재 근무표 기반 추정치를 fallback으로 사용합니다.
@@ -807,97 +858,103 @@ class _DashboardPageState extends State<DashboardPage> {
                   final modeBadge = sizeMode == 'manual_5plus'
                       ? '[5인 이상 고정]'
                       : sizeMode == 'manual_under5'
-                          ? '[5인 미만 고정]'
-                          : '[자동]';
+                      ? '[5인 미만 고정]'
+                      : '[자동]';
                   final legalText = isTenOrMore
                       ? '10인 이상 (취업규칙 신고 대상)'
-                      : (isFiveOrMore ? '추정 5인 이상 $modeBadge' : '추정 5인 미만 $modeBadge');
+                      : (isFiveOrMore
+                            ? '추정 5인 이상 $modeBadge'
+                            : '추정 5인 미만 $modeBadge');
                   final legalColor = isTenOrMore
                       ? const Color(0xFF8E44AD)
                       : (isNearTen
-                          ? const Color(0xFF7A3DB8)
-                          : (isFiveOrMore
-                              ? const Color(0xFF1a6ebd)
-                              : const Color(0xFF2D6A4F)));
+                            ? const Color(0xFF7A3DB8)
+                            : (isFiveOrMore
+                                  ? const Color(0xFF1a6ebd)
+                                  : const Color(0xFF2D6A4F)));
                   final legalSubtitle = isNearTen
                       ? '10인 임박! 현재 ${avgWorkers.toStringAsFixed(1)}명 · 취업규칙 신고 의무 주의'
                       : sizeMode == 'auto'
-                          ? (storedTotalDays > 0
-                              ? '평균 ${avgWorkers.toStringAsFixed(1)}명 · 5인↑ $storedDaysWithFive/$storedTotalDays일'
-                              : '상시평균 : ${avgWorkers.toStringAsFixed(1)}명')
-                          : '수동 설정 (자동 추정: ${avgWorkers.toStringAsFixed(1)}명 / ${autoIsFiveOrMore ? "5인 이상" : "5인 미만"})';
+                      ? (storedTotalDays > 0
+                            ? '평균 ${avgWorkers.toStringAsFixed(1)}명 · 5인↑ $storedDaysWithFive/$storedTotalDays일'
+                            : '상시평균 : ${avgWorkers.toStringAsFixed(1)}명')
+                      : '수동 설정 (자동 추정: ${avgWorkers.toStringAsFixed(1)}명 / ${autoIsFiveOrMore ? "5인 이상" : "5인 미만"})';
 
-                  final isMismatched = sizeMode.startsWith('manual_') && (isFiveOrMore != autoIsFiveOrMore);
+                  final isMismatched =
+                      sizeMode.startsWith('manual_') &&
+                      (isFiveOrMore != autoIsFiveOrMore);
 
                   return SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (showRenewalAlert) _buildRenewalAlertBanner(context),
-                    if (showRenewalAlert) const SizedBox(height: 12),
-                    if (!isRegistered) _buildDashboardUnregisteredBanner(),
-                    if (!isRegistered) const SizedBox(height: 12),
-                    if (storeId.isNotEmpty) StandingChangeAlert(storeId: storeId),
-
-
-                    Row(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          child: _summaryStaffCard(
-                            total: activeWorkers.length,
-                            subtitle: '일반 $regular명 · 파견 $dispatched명',
-                          ),
+                        if (showRenewalAlert) _buildRenewalAlertBanner(context),
+                        if (showRenewalAlert) const SizedBox(height: 12),
+                        if (!isRegistered) _buildDashboardUnregisteredBanner(),
+                        if (!isRegistered) const SizedBox(height: 12),
+                        if (storeId.isNotEmpty)
+                          StandingChangeAlert(storeId: storeId),
+
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _summaryStaffCard(
+                                total: activeWorkers.length,
+                                subtitle: '일반 $regular명 · 파견 $dispatched명',
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _summaryLegalCard(
+                                statusText: legalText,
+                                subtitle: legalSubtitle,
+                                backgroundColor: legalColor,
+                                showWarning: isMismatched,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _summaryLegalCard(
-                            statusText: legalText,
-                            subtitle: legalSubtitle,
-                            backgroundColor: legalColor,
-                            showWarning: isMismatched,
+                        if (storeId.isNotEmpty)
+                          ComplianceAlertBanner(
+                            storeId: storeId,
+                            storeData: storeData,
+                            fiveOrMoreReason: (sizeMode == 'auto')
+                                ? storeData['fiveOrMoreDecisionReason']
+                                      ?.toString()
+                                : null,
+                            refreshKey: activeWorkers
+                                .map(
+                                  (w) =>
+                                      '${w.id}_${w.isPaperContract}_${w.documentsInitialized}',
+                                )
+                                .join(','),
                           ),
+                        const SizedBox(height: 12),
+                        DashboardTodaysSchedule(
+                          storeId: storeId,
+                          workers: activeWorkers,
                         ),
+                        const SizedBox(height: 12),
+                        InkWell(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  HealthCertificateAlertManagementScreen(),
+                            ),
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          child: _healthCard(healthRows),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildNoticeSection(storeId),
+                        const SizedBox(height: 12),
+                        _buildExpirationSection(storeId),
+                        const SizedBox(height: 12),
+                        _buildTodoSection(storeId),
                       ],
                     ),
-                    if (storeId.isNotEmpty)
-                      ComplianceAlertBanner(
-                        storeId: storeId,
-                        storeData: storeData,
-                        fiveOrMoreReason: (sizeMode == 'auto')
-                            ? storeData['fiveOrMoreDecisionReason']?.toString()
-                            : null,
-                        refreshKey: activeWorkers.map((w) => '${w.id}_${w.isPaperContract}_${w.documentsInitialized}').join(','),
-                      ),
-                    const SizedBox(height: 12),
-                    _workingNowCard(
-                      storeId: storeId,
-                      workers: activeWorkers,
-                    ),
-                    const SizedBox(height: 12),
-                    _exceptionPendingCard(
-                      storeId: storeId,
-                      workers: activeWorkers,
-                    ),
-                    const SizedBox(height: 12),
-                    InkWell(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => HealthCertificateAlertManagementScreen(),
-                        ),
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      child: _healthCard(healthRows),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildNoticeSection(storeId),
-                    const SizedBox(height: 12),
-                    _buildExpirationSection(storeId),
-                    const SizedBox(height: 12),
-                    _buildTodoSection(storeId),
-                  ],
-                ),
                   );
                 },
               );
@@ -918,10 +975,7 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '직원',
-            style: TextStyle(fontSize: 13, color: Colors.white),
-          ),
+          const Text('직원', style: TextStyle(fontSize: 13, color: Colors.white)),
           const SizedBox(height: 4),
           Text(
             '$total',
@@ -1051,7 +1105,9 @@ class _DashboardPageState extends State<DashboardPage> {
         final todayYmd = rosterDateKey(now);
 
         // 오늘 발생한 모든 출근 기록 (완료 + 진행중)
-        final todayLogs = all.where((a) => rosterDateKey(a.clockIn) == todayYmd).toList();
+        final todayLogs = all
+            .where((a) => rosterDateKey(a.clockIn) == todayYmd)
+            .toList();
         final logsByStaff = <String, List<Attendance>>{};
         for (final l in todayLogs) {
           (logsByStaff[l.staffId] ??= []).add(l);
@@ -1071,40 +1127,47 @@ class _DashboardPageState extends State<DashboardPage> {
         for (final a in open) {
           final w = workerById[a.staffId];
           final isOrphaned = w == null;
-          final name = isOrphaned ? '(삭제된 직원)' : (w.name.isEmpty ? a.staffId : w.name);
-          
+          final name = isOrphaned
+              ? '(삭제된 직원)'
+              : (w.name.isEmpty ? a.staffId : w.name);
+
           // 오늘 누적 시간 계산
           final staffLogs = logsByStaff[a.staffId] ?? [];
-          int totalMins = staffLogs.fold(0, (sum, log) => sum + log.workedMinutesAt(now));
+          int totalMins = staffLogs.fold(
+            0,
+            (sum, log) => sum + log.workedMinutesAt(now),
+          );
           int sessionMins = a.workedMinutesAt(now);
 
           final unplanned = a.attendanceStatus == 'Unplanned';
           final approved = a.attendanceStatus == 'UnplannedApproved';
           final pending = a.attendanceStatus == 'pending_approval';
-          
+
           rows.add(
             _DashboardWorkRow(
               name: name,
-              timeText: isOrphaned ? '출근 기록을 삭제하려면 누르세요' : '오늘 총 ${format(totalMins)} (현재 ${format(sessionMins)}째)',
+              timeText: isOrphaned
+                  ? '출근 기록을 삭제하려면 누르세요'
+                  : '오늘 총 ${format(totalMins)} (현재 ${format(sessionMins)}째)',
               status: isOrphaned
                   ? '삭제 필요'
                   : (pending
-                      ? '출근 승인 대기'
-                      : (approved
-                          ? '계획 외 승인'
-                          : (unplanned ? '계획 외 근무 발생' : '정상'))),
-              avatarBg: isOrphaned 
-                  ? const Color(0xFFE24B4A) 
+                        ? '출근 승인 대기'
+                        : (approved
+                              ? '계획 외 승인'
+                              : (unplanned ? '계획 외 근무 발생' : '정상'))),
+              avatarBg: isOrphaned
+                  ? const Color(0xFFE24B4A)
                   : (unplanned || approved || pending
-                      ? const Color(0xFFEF9F27)
-                      : const Color(0xFF1a6ebd)),
+                        ? const Color(0xFFEF9F27)
+                        : const Color(0xFF1a6ebd)),
               attendance: a,
               needsApproval: unplanned || pending,
               isOrphaned: isOrphaned,
             ),
           );
         }
-        
+
         // 출근 안 했지만 오늘 일한 사람들도 추가 (선택 사항인데 여기서는 '지금 근무 중' 카드이므로 일단 제외하거나 아래에 추가 가능)
         // 일단 사용자가 '각 근무자가 얼마나 일했는지' 보고 싶어 하므로, 이미 퇴근한 사람도 '오늘의 요약'에 넣으면 좋겠지만,
         // 현재 UI는 '지금 근무 중' 섹션입니다.
@@ -1120,11 +1183,13 @@ class _DashboardPageState extends State<DashboardPage> {
   List<_DashboardWorkRow> _scheduledWorkingRows(List<Worker> workers) {
     final now = TimeOfDay.now();
     final nowMinutes = now.hour * 60 + now.minute;
-    final weekday = AppClock.now().weekday == DateTime.sunday ? 0 : AppClock.now().weekday;
+    final weekday = AppClock.now().weekday == DateTime.sunday
+        ? 0
+        : AppClock.now().weekday;
     final rows = <_DashboardWorkRow>[];
     for (final w in workers) {
       if (!w.workDays.contains(weekday)) continue;
-      
+
       final parsedSchedule = _parseWorkerSchedule(w);
       final checkInTime = parsedSchedule[weekday]?.start ?? w.checkInTime;
       final checkOutTime = parsedSchedule[weekday]?.end ?? w.checkOutTime;
@@ -1193,7 +1258,10 @@ class _DashboardPageState extends State<DashboardPage> {
           if (rows.isEmpty)
             const Padding(
               padding: EdgeInsets.all(14),
-              child: Text('현재 근무 중인 직원이 없습니다.', style: TextStyle(color: Color(0xFF888888))),
+              child: Text(
+                '현재 근무 중인 직원이 없습니다.',
+                style: TextStyle(color: Color(0xFF888888)),
+              ),
             )
           else
             ...rows.asMap().entries.map((entry) {
@@ -1207,14 +1275,18 @@ class _DashboardPageState extends State<DashboardPage> {
                 name: row.name,
                 time: row.timeText,
                 status: row.status,
-                statusBg: isWarn ? const Color(0xFFFFF0DC) : const Color(0xFFEAF3DE),
-                statusText: isWarn ? const Color(0xFF854F0B) : const Color(0xFF286b3a),
+                statusBg: isWarn
+                    ? const Color(0xFFFFF0DC)
+                    : const Color(0xFFEAF3DE),
+                statusText: isWarn
+                    ? const Color(0xFF854F0B)
+                    : const Color(0xFF286b3a),
                 isLast: i == rows.length - 1,
                 onTap: row.isOrphaned && row.attendance != null
                     ? () => _deleteOrphanedAttendance(row.attendance!)
                     : (row.needsApproval && row.attendance != null
-                        ? () => _approveAttendanceForBoss(row.attendance!)
-                        : null),
+                          ? () => _approveAttendanceForBoss(row.attendance!)
+                          : null),
               );
             }),
         ],
@@ -1264,8 +1336,9 @@ class _DashboardPageState extends State<DashboardPage> {
               child: const Text('실제 출근 시각'),
             ),
             FilledButton(
-              onPressed: () =>
-                  Navigator.of(ctx).pop(_PendingClockInApprove.payrollScheduled),
+              onPressed: () => Navigator.of(
+                ctx,
+              ).pop(_PendingClockInApprove.payrollScheduled),
               child: const Text('정시 기준'),
             ),
           ],
@@ -1349,12 +1422,19 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: const Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.warning_amber_rounded, color: Color(0xFFE24B4A), size: 18),
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Color(0xFFE24B4A),
+                      size: 18,
+                    ),
                     SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         '사전 스케줄이 없는 대체/추가 근무입니다. 사업장 운영 형태에 따라 연장 근로에 대한 가산 수당(1.5배)이 발생할 수 있습니다.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFFA32D2D)),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFA32D2D),
+                        ),
                       ),
                     ),
                   ],
@@ -1457,7 +1537,7 @@ class _DashboardPageState extends State<DashboardPage> {
     final schedEnd = a.scheduledShiftEndIso != null
         ? DateTime.parse(a.scheduledShiftEndIso!)
         : a.clockOut;
-        
+
     final updated = Attendance(
       id: a.id,
       staffId: a.staffId,
@@ -1483,7 +1563,13 @@ class _DashboardPageState extends State<DashboardPage> {
     await DatabaseService().recordAttendance(updated);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(isEarly ? '조기 퇴근을 반려했습니다.' : '연장 근무를 반려했습니다. 퇴근 시각은 근무표 종료 시각으로 반영됩니다.')),
+      SnackBar(
+        content: Text(
+          isEarly
+              ? '조기 퇴근을 반려했습니다.'
+              : '연장 근무를 반려했습니다. 퇴근 시각은 근무표 종료 시각으로 반영됩니다.',
+        ),
+      ),
     );
   }
 
@@ -1515,14 +1601,14 @@ class _DashboardPageState extends State<DashboardPage> {
     try {
       await DatabaseService().deleteAttendance(attendance.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('기록이 정상적으로 삭제되었습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('기록이 정상적으로 삭제되었습니다.')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('삭제 실패: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('삭제 실패: $e')));
     }
   }
 
@@ -1538,12 +1624,14 @@ class _DashboardPageState extends State<DashboardPage> {
       builder: (context, snap) {
         final all = snap.data ?? const <Attendance>[];
         final pending = all
-            .where((a) =>
-                (a.attendanceStatus == 'pending_approval' ||
-                 a.attendanceStatus == 'Unplanned' ||
-                 a.attendanceStatus == 'pending_overtime' ||
-                 a.attendanceStatus == 'early_leave_pending') &&
-                a.clockOut != null)
+            .where(
+              (a) =>
+                  (a.attendanceStatus == 'pending_approval' ||
+                      a.attendanceStatus == 'Unplanned' ||
+                      a.attendanceStatus == 'pending_overtime' ||
+                      a.attendanceStatus == 'early_leave_pending') &&
+                  a.clockOut != null,
+            )
             .toList();
         return _buildExceptionPendingBody(pending, workers);
       },
@@ -1599,26 +1687,33 @@ class _DashboardPageState extends State<DashboardPage> {
               final i = e.key;
               final a = e.value;
               final w = workerById[a.staffId];
-              final name = w?.name ?? 
-                  (a.staffId.length > 8 
-                      ? '정보 로딩 중... (${a.staffId.substring(0, 8)})' 
+              final name =
+                  w?.name ??
+                  (a.staffId.length > 8
+                      ? '정보 로딩 중... (${a.staffId.substring(0, 8)})'
                       : a.staffId);
               final outHm = _formatHm(a.clockOut!);
-              
+
               final isEarly = a.attendanceStatus == 'early_leave_pending';
               final isPendingClockIn = a.attendanceStatus == 'pending_approval';
               final isUnplanned = a.attendanceStatus == 'Unplanned';
-              
-              final label = isPendingClockIn 
-                  ? '조기 출근' 
+
+              final label = isPendingClockIn
+                  ? '조기 출근'
                   : (isUnplanned ? '휴무일 출근' : (isEarly ? '조기 퇴근' : '연장 근무'));
-              
+
               final reason = (isPendingClockIn || isUnplanned)
-                  ? (a.exceptionReason?.trim().isNotEmpty == true ? a.exceptionReason! : '(기록 없음)')
+                  ? (a.exceptionReason?.trim().isNotEmpty == true
+                        ? a.exceptionReason!
+                        : '(기록 없음)')
                   : (isEarly
-                      ? (a.exceptionReason?.trim().isNotEmpty == true ? a.exceptionReason! : '(사유 없음)')
-                      : (a.overtimeReason?.trim().isNotEmpty == true ? a.overtimeReason! : '(사유 없음)'));
-                  
+                        ? (a.exceptionReason?.trim().isNotEmpty == true
+                              ? a.exceptionReason!
+                              : '(사유 없음)')
+                        : (a.overtimeReason?.trim().isNotEmpty == true
+                              ? a.overtimeReason!
+                              : '(사유 없음)'));
+
               final isLast = i == pending.length - 1;
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1661,7 +1756,11 @@ class _DashboardPageState extends State<DashboardPage> {
                                     _approveException(a);
                                   }
                                 },
-                                child: Text((isPendingClockIn || isUnplanned) ? '출근 승인' : '승인'),
+                                child: Text(
+                                  (isPendingClockIn || isUnplanned)
+                                      ? '출근 승인'
+                                      : '승인',
+                                ),
                               ),
                             ),
                           ],
@@ -1718,7 +1817,10 @@ class _DashboardPageState extends State<DashboardPage> {
           if (rows.isEmpty)
             const Padding(
               padding: EdgeInsets.all(14),
-              child: Text('만료 임박 보건증이 없습니다.', style: TextStyle(color: Color(0xFF888888))),
+              child: Text(
+                '만료 임박 보건증이 없습니다.',
+                style: TextStyle(color: Color(0xFF888888)),
+              ),
             )
           else
             ...rows.asMap().entries.map((entry) {
@@ -1743,13 +1845,20 @@ class _DashboardPageState extends State<DashboardPage> {
     final today = AppClock.now();
     final rows = <_DashboardHealthRow>[];
     for (final w in workers) {
-      if (!w.hasHealthCert || w.healthCertExpiry == null || w.healthCertExpiry!.isEmpty) continue;
+      if (!w.hasHealthCert ||
+          w.healthCertExpiry == null ||
+          w.healthCertExpiry!.isEmpty)
+        continue;
       final expiry = DateTime.tryParse(w.healthCertExpiry!);
       if (expiry == null) continue;
-      final d = DateTime(expiry.year, expiry.month, expiry.day).difference(DateTime(today.year, today.month, today.day)).inDays;
+      final d = DateTime(
+        expiry.year,
+        expiry.month,
+        expiry.day,
+      ).difference(DateTime(today.year, today.month, today.day)).inDays;
       if (d > 30) continue;
       final urgent = d <= 7;
-      
+
       String ddayText;
       if (d < 0) {
         ddayText = '만료 (D+${-d})';
@@ -1758,11 +1867,12 @@ class _DashboardPageState extends State<DashboardPage> {
       } else {
         ddayText = 'D-$d';
       }
-      
+
       rows.add(
         _DashboardHealthRow(
           name: w.name,
-          date: '${expiry.year}.${expiry.month.toString().padLeft(2, '0')}.${expiry.day.toString().padLeft(2, '0')}',
+          date:
+              '${expiry.year}.${expiry.month.toString().padLeft(2, '0')}.${expiry.day.toString().padLeft(2, '0')}',
           dday: ddayText,
           dotColor: urgent ? const Color(0xFFE24B4A) : const Color(0xFFEF9F27),
           badgeBg: urgent ? const Color(0xFFFCEBEB) : const Color(0xFFFFF0DC),
@@ -1882,12 +1992,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  name,
-                  style: const TextStyle(fontSize: 14),
-                ),
-              ),
+              Expanded(child: Text(name, style: const TextStyle(fontSize: 14))),
               Text(
                 date,
                 style: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
@@ -1919,11 +2024,7 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.gavel_rounded,
-            color: Color(0xFFE24B4A),
-            size: 24,
-          ),
+          const Icon(Icons.gavel_rounded, color: Color(0xFFE24B4A), size: 24),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1940,10 +2041,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 const SizedBox(height: 2),
                 const Text(
                   '최저임금 미달 알바생이 있습니다. 즉시 임금 변경 합의서를 일괄 전송하세요.',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFFC0392B),
-                  ),
+                  style: TextStyle(fontSize: 11, color: Color(0xFFC0392B)),
                 ),
               ],
             ),
@@ -1952,7 +2050,9 @@ class _DashboardPageState extends State<DashboardPage> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ContractRenewalScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const ContractRenewalScreen(),
+                ),
               );
             },
             style: ElevatedButton.styleFrom(
@@ -1960,9 +2060,14 @@ class _DashboardPageState extends State<DashboardPage> {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               minimumSize: const Size(0, 0),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
-            child: const Text('배포하기', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+            child: const Text(
+              '배포하기',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
           ),
         ],
       ),
@@ -1979,11 +2084,7 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
       child: const Row(
         children: [
-          Icon(
-            Icons.warning_amber_rounded,
-            color: Color(0xFFd4700a),
-            size: 20,
-          ),
+          Icon(Icons.warning_amber_rounded, color: Color(0xFFd4700a), size: 20),
           SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -2000,8 +2101,6 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-
-
   Widget _buildNoticeSection(String storeId) {
     if (storeId.isEmpty) return const SizedBox.shrink();
 
@@ -2015,7 +2114,7 @@ class _DashboardPageState extends State<DashboardPage> {
           .get(),
       builder: (context, snap) {
         if (!snap.hasData) return const SizedBox.shrink();
-        
+
         Widget wrapCard(Widget child) {
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -2025,7 +2124,11 @@ class _DashboardPageState extends State<DashboardPage> {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: const Color(0xFFE0E0E0), width: 0.5),
               boxShadow: [
-                 BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2)),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
               ],
             ),
             child: child,
@@ -2039,7 +2142,11 @@ class _DashboardPageState extends State<DashboardPage> {
             child: wrapCard(
               Row(
                 children: [
-                  Icon(Icons.campaign_rounded, size: 20, color: Colors.blue.shade700),
+                  Icon(
+                    Icons.campaign_rounded,
+                    size: 20,
+                    color: Colors.blue.shade700,
+                  ),
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
@@ -2063,9 +2170,20 @@ class _DashboardPageState extends State<DashboardPage> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.campaign_rounded, size: 18, color: Colors.blue.shade700),
+                    Icon(
+                      Icons.campaign_rounded,
+                      size: 18,
+                      color: Colors.blue.shade700,
+                    ),
                     const SizedBox(width: 6),
-                    const Text('최신 공지', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54)),
+                    const Text(
+                      '최신 공지',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.black54,
+                      ),
+                    ),
                   ],
                 ),
                 InkWell(
@@ -2073,7 +2191,10 @@ class _DashboardPageState extends State<DashboardPage> {
                   borderRadius: BorderRadius.circular(12),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Text('공지사항 전체보기 >', style: TextStyle(fontSize: 12, color: Colors.blue)),
+                    child: Text(
+                      '공지사항 전체보기 >',
+                      style: TextStyle(fontSize: 12, color: Colors.blue),
+                    ),
                   ),
                 ),
               ],
@@ -2089,7 +2210,8 @@ class _DashboardPageState extends State<DashboardPage> {
               String dateText = '';
               if (createdAt is Timestamp) {
                 final dt = createdAt.toDate();
-                dateText = '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}';
+                dateText =
+                    '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}';
               }
 
               return StatefulBuilder(
@@ -2112,14 +2234,22 @@ class _DashboardPageState extends State<DashboardPage> {
                                     if (dateText.isNotEmpty)
                                       Text(
                                         dateText,
-                                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey,
+                                        ),
                                       ),
                                     const SizedBox(height: 2),
                                     Text(
                                       title,
-                                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                       maxLines: isExpanded ? null : 1,
-                                      overflow: isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                                      overflow: isExpanded
+                                          ? TextOverflow.visible
+                                          : TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
@@ -2128,7 +2258,13 @@ class _DashboardPageState extends State<DashboardPage> {
                                 const SizedBox(width: 8),
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(6),
-                                  child: R2Image(storeId: storeId, imagePathOrId: imageUrl, width: 36, height: 36, fit: BoxFit.cover),
+                                  child: R2Image(
+                                    storeId: storeId,
+                                    imagePathOrId: imageUrl,
+                                    width: 36,
+                                    height: 36,
+                                    fit: BoxFit.cover,
+                                  ),
                                 ),
                               ],
                             ],
@@ -2139,21 +2275,30 @@ class _DashboardPageState extends State<DashboardPage> {
                             const SizedBox(height: 8),
                             Text(
                               content,
-                              style: const TextStyle(fontSize: 13, height: 1.4, color: Colors.black87),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                height: 1.4,
+                                color: Colors.black87,
+                              ),
                             ),
                             if (imageUrl.isNotEmpty) ...[
                               const SizedBox(height: 8),
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: R2Image(storeId: storeId, imagePathOrId: imageUrl, fit: BoxFit.contain, width: double.infinity),
+                                child: R2Image(
+                                  storeId: storeId,
+                                  imagePathOrId: imageUrl,
+                                  fit: BoxFit.contain,
+                                  width: double.infinity,
+                                ),
                               ),
-                            ]
-                          ]
+                            ],
+                          ],
                         ],
                       ),
                     ),
                   );
-                }
+                },
               );
             }),
           ],
@@ -2186,7 +2331,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
-        
+
         final docs = snap.data!.docs.where((doc) {
           final ts = (doc.data() as Map<String, dynamic>)['dueDate'];
           if (ts is Timestamp) {
@@ -2210,9 +2355,20 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.inventory_2_rounded, size: 20, color: Color(0xFFE67E22)),
+                  const Icon(
+                    Icons.inventory_2_rounded,
+                    size: 20,
+                    color: Color(0xFFE67E22),
+                  ),
                   const SizedBox(width: 8),
-                  const Text('유통기한', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54)),
+                  const Text(
+                    '유통기한',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.black54,
+                    ),
+                  ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
@@ -2248,7 +2404,11 @@ class _DashboardPageState extends State<DashboardPage> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.inventory_2_rounded, size: 18, color: Color(0xFFE67E22)),
+                    const Icon(
+                      Icons.inventory_2_rounded,
+                      size: 18,
+                      color: Color(0xFFE67E22),
+                    ),
                     const SizedBox(width: 8),
                     const Text(
                       '오늘 유통기한 마감',
@@ -2272,13 +2432,23 @@ class _DashboardPageState extends State<DashboardPage> {
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       children: [
-                        const Text('· ', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black45)),
+                        const Text(
+                          '· ',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black45,
+                          ),
+                        ),
                         Expanded(
                           child: Text(
                             _expirationLine(doc.data() as Map<String, dynamic>),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
                           ),
                         ),
                       ],
@@ -2288,7 +2458,10 @@ class _DashboardPageState extends State<DashboardPage> {
                 if (docs.length > 3)
                   const Padding(
                     padding: EdgeInsets.only(top: 2),
-                    child: Text('...외 추가 마감 품목 있음', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                    child: Text(
+                      '...외 추가 마감 품목 있음',
+                      style: TextStyle(fontSize: 11, color: Colors.black54),
+                    ),
                   ),
               ],
             ),
@@ -2314,16 +2487,18 @@ class _DashboardPageState extends State<DashboardPage> {
           debugPrint('Todo fetch error: ${snap.error}');
         }
         if (!snap.hasData) return const SizedBox.shrink();
-        
+
         // Sort explicitly by createdAt descending in Dart
         final allDocs = snap.data!.docs.toList();
         allDocs.sort((a, b) {
-          final ta = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-          final tb = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+          final ta =
+              (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+          final tb =
+              (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
           if (ta == null || tb == null) return 0;
           return tb.compareTo(ta); // descending
         });
-        
+
         final docs = allDocs.take(3).toList();
         if (docs.isEmpty) {
           return InkWell(
@@ -2338,9 +2513,20 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.checklist_rounded, size: 20, color: Colors.green.shade700),
+                  Icon(
+                    Icons.checklist_rounded,
+                    size: 20,
+                    color: Colors.green.shade700,
+                  ),
                   const SizedBox(width: 8),
-                  const Text('전달사항', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54)),
+                  const Text(
+                    '전달사항',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.black54,
+                    ),
+                  ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
@@ -2372,7 +2558,11 @@ class _DashboardPageState extends State<DashboardPage> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.checklist_rounded, size: 18, color: Colors.green.shade700),
+                    Icon(
+                      Icons.checklist_rounded,
+                      size: 18,
+                      color: Colors.green.shade700,
+                    ),
                     const SizedBox(width: 8),
                     const Text(
                       '미완료 전달사항',
@@ -2383,24 +2573,38 @@ class _DashboardPageState extends State<DashboardPage> {
                       ),
                     ),
                     const Spacer(),
-                    const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+                    const Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: Colors.grey,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 ...docs.map((doc) {
-                  final title = (doc.data() as Map<String, dynamic>)['title']?.toString() ?? '전달사항';
+                  final title =
+                      (doc.data() as Map<String, dynamic>)['title']
+                          ?.toString() ??
+                      '전달사항';
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Row(
                       children: [
-                        Icon(Icons.radio_button_unchecked, size: 14, color: Colors.grey.shade400),
+                        Icon(
+                          Icons.radio_button_unchecked,
+                          size: 14,
+                          color: Colors.grey.shade400,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13, color: Colors.black87),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Colors.black87,
+                            ),
                           ),
                         ),
                       ],
@@ -2459,15 +2663,17 @@ Widget _pageDot({required bool active}) {
     width: 6,
     height: 6,
     decoration: BoxDecoration(
-      color: active
-          ? Colors.white
-          : Colors.white.withValues(alpha: 0.3),
+      color: active ? Colors.white : Colors.white.withValues(alpha: 0.3),
       shape: BoxShape.circle,
     ),
   );
 }
 
-Widget _buildBadge(String text, {required Color bgColor, required Color textColor}) {
+Widget _buildBadge(
+  String text, {
+  required Color bgColor,
+  required Color textColor,
+}) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
@@ -2485,7 +2691,11 @@ Widget _buildBadge(String text, {required Color bgColor, required Color textColo
   );
 }
 
-Widget _buildSmallBadge(String text, {required Color bgColor, required Color textColor}) {
+Widget _buildSmallBadge(
+  String text, {
+  required Color bgColor,
+  required Color textColor,
+}) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
     decoration: BoxDecoration(
@@ -2522,14 +2732,20 @@ class _SchedulePageState extends State<SchedulePage> {
     super.initState();
   }
 
-  static DateTime _getMonday(DateTime d) => d.subtract(Duration(days: d.weekday - 1));
+  static DateTime _getMonday(DateTime d) =>
+      d.subtract(Duration(days: d.weekday - 1));
   static bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
   static String _toYmd(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  void _previousWeek() => setState(() => _currentWeekStart = _currentWeekStart.subtract(const Duration(days: 7)));
-  void _nextWeek() => setState(() => _currentWeekStart = _currentWeekStart.add(const Duration(days: 7)));
+  void _previousWeek() => setState(
+    () =>
+        _currentWeekStart = _currentWeekStart.subtract(const Duration(days: 7)),
+  );
+  void _nextWeek() => setState(
+    () => _currentWeekStart = _currentWeekStart.add(const Duration(days: 7)),
+  );
 
   Future<void> _onCellTap(Worker worker, int dayIndex) async {
     final target = _currentWeekStart.add(Duration(days: dayIndex));
@@ -2551,7 +2767,9 @@ class _SchedulePageState extends State<SchedulePage> {
       ),
       builder: (_) => SafeArea(
         child: Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 20),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).padding.bottom + 20,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2565,20 +2783,41 @@ class _SchedulePageState extends State<SchedulePage> {
                 leading: const Icon(Icons.swap_horiz_rounded),
                 title: const Text('대타 / 교대 지정'),
                 enabled: hasShift,
-                onTap: hasShift ? () => Navigator.of(context).pop('substitute') : null,
+                onTap: hasShift
+                    ? () => Navigator.of(context).pop('substitute')
+                    : null,
               ),
               if (!isAnnualLeave)
                 ListTile(
-                  leading: const Icon(Icons.beach_access_rounded, color: Color(0xFF1565C0)),
-                  title: const Text('연차 처리', style: TextStyle(color: Color(0xFF1565C0), fontWeight: FontWeight.w600)),
+                  leading: const Icon(
+                    Icons.beach_access_rounded,
+                    color: Color(0xFF1565C0),
+                  ),
+                  title: const Text(
+                    '연차 처리',
+                    style: TextStyle(
+                      color: Color(0xFF1565C0),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   onTap: () => Navigator.of(context).pop('annual_leave'),
                 ),
               if (current != null)
                 ListTile(
-                  leading: const Icon(Icons.restart_alt_rounded, color: Color(0xFFE24B4A)),
+                  leading: const Icon(
+                    Icons.restart_alt_rounded,
+                    color: Color(0xFFE24B4A),
+                  ),
                   title: Text(
-                    isAnnualLeave ? '연차 취소' : isSubstituteShift ? '대근 지정 취소' : '기본 근무로 초기화',
-                    style: const TextStyle(color: Color(0xFFE24B4A), fontWeight: FontWeight.w600),
+                    isAnnualLeave
+                        ? '연차 취소'
+                        : isSubstituteShift
+                        ? '대근 지정 취소'
+                        : '기본 근무로 초기화',
+                    style: const TextStyle(
+                      color: Color(0xFFE24B4A),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   onTap: () => Navigator.of(context).pop('reset'),
                 ),
@@ -2652,8 +2891,12 @@ class _SchedulePageState extends State<SchedulePage> {
     final o = overrides[key];
     final baseDay = date.weekday == DateTime.sunday ? 0 : date.weekday;
     final hasBaseShift = worker.workDays.contains(baseDay);
-    final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? worker.checkInTime : null);
-    final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? worker.checkOutTime : null);
+    final checkIn = (o != null)
+        ? o.checkIn
+        : (hasBaseShift ? worker.checkInTime : null);
+    final checkOut = (o != null)
+        ? o.checkOut
+        : (hasBaseShift ? worker.checkOutTime : null);
     return checkIn != null && checkOut != null;
   }
 
@@ -2666,8 +2909,12 @@ class _SchedulePageState extends State<SchedulePage> {
     final o = overrides[key];
     final baseDay = date.weekday == DateTime.sunday ? 0 : date.weekday;
     final hasBaseShift = worker.workDays.contains(baseDay);
-    final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? worker.checkInTime : null);
-    final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? worker.checkOutTime : null);
+    final checkIn = (o != null)
+        ? o.checkIn
+        : (hasBaseShift ? worker.checkInTime : null);
+    final checkOut = (o != null)
+        ? o.checkOut
+        : (hasBaseShift ? worker.checkOutTime : null);
     if (checkIn == null || checkOut == null) return null;
     return (checkIn: checkIn, checkOut: checkOut);
   }
@@ -2698,7 +2945,11 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   /// 연차 처리: ScheduleOverride + Attendance(isAttendanceEquivalent) + usedAnnualLeave 차감
-  Future<void> _handleAnnualLeave(Worker worker, DateTime date, Box<ScheduleOverride> overrideBox) async {
+  Future<void> _handleAnnualLeave(
+    Worker worker,
+    DateTime date,
+    Box<ScheduleOverride> overrideBox,
+  ) async {
     final ymd = _toYmd(date);
     final key = '${worker.id}_$ymd';
 
@@ -2716,8 +2967,14 @@ class _SchedulePageState extends State<SchedulePage> {
           '연차 1일이 차감되며, 해당 일은 출근한 것으로 간주되어 주휴수당에 영향을 주지 않습니다.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('연차 처리')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('연차 처리'),
+          ),
         ],
       ),
     );
@@ -2765,7 +3022,11 @@ class _SchedulePageState extends State<SchedulePage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _resetOverride(Worker worker, DateTime date, Box<ScheduleOverride> overrideBox) async {
+  Future<void> _resetOverride(
+    Worker worker,
+    DateTime date,
+    Box<ScheduleOverride> overrideBox,
+  ) async {
     final ymd = _toYmd(date);
     final key = '${worker.id}_$ymd';
     final hasOverride = overrideBox.containsKey(key);
@@ -2779,11 +3040,18 @@ class _SchedulePageState extends State<SchedulePage> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('연차 취소'),
-          content: Text('${worker.name}의 ${date.month}/${date.day} 연차를 취소합니다.\n차감된 연차 1일이 복원됩니다.'),
+          content: Text(
+            '${worker.name}의 ${date.month}/${date.day} 연차를 취소합니다.\n차감된 연차 1일이 복원됩니다.',
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('아니오')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('아니오'),
+            ),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE24B4A)),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE24B4A),
+              ),
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('연차 취소'),
             ),
@@ -2800,15 +3068,20 @@ class _SchedulePageState extends State<SchedulePage> {
       await DatabaseService().deleteAttendance(leaveAttendanceId);
 
       // usedAnnualLeave 복원
-      worker.usedAnnualLeave = (worker.usedAnnualLeave - 1.0).clamp(0.0, double.infinity);
+      worker.usedAnnualLeave = (worker.usedAnnualLeave - 1.0).clamp(
+        0.0,
+        double.infinity,
+      );
       await WorkerService.save(worker);
 
       if (mounted) setState(() {});
       return;
     }
 
-    final isSubShift = o != null && o.checkIn != null; // Substitute worker (currently working)
-    final isInOffState = o != null && o.checkIn == null; // Original worker (currently off)
+    final isSubShift =
+        o != null && o.checkIn != null; // Substitute worker (currently working)
+    final isInOffState =
+        o != null && o.checkIn == null; // Original worker (currently off)
 
     // Reset this worker
     await overrideBox.delete(key);
@@ -2819,23 +3092,23 @@ class _SchedulePageState extends State<SchedulePage> {
       final workers = WorkerService.getAll();
       final currentOverrides = overrideBox.toMap();
       final baseDay = date.weekday == DateTime.sunday ? 0 : date.weekday;
-      
+
       final subIn = _normalizeHm(o.checkIn);
       final subOut = _normalizeHm(o.checkOut);
 
       for (final w in workers) {
         if (w.id == worker.id) continue;
-        
+
         final wKey = '${w.id}_$ymd';
         final wOverride = currentOverrides[wKey];
         final wHasBaseShift = w.workDays.contains(baseDay);
-        
+
         // If they had a base shift that matches what the sub was doing, BUT they are currently OFF by override...
-        if (wHasBaseShift && 
-            wOverride != null && wOverride.checkIn == null && 
-            _normalizeHm(w.checkInTime) == subIn && 
+        if (wHasBaseShift &&
+            wOverride != null &&
+            wOverride.checkIn == null &&
+            _normalizeHm(w.checkInTime) == subIn &&
             _normalizeHm(w.checkOutTime) == subOut) {
-          
           await overrideBox.delete(wKey);
           await _syncRosterDayToFirestore(w.id, ymd, null, null);
           break; // We found the pair
@@ -2844,23 +3117,25 @@ class _SchedulePageState extends State<SchedulePage> {
     }
     // Smart Cancellation: If we reset an OFF person, try to find who took their shift and remove it.
     else if (isInOffState) {
-        final workers = WorkerService.getAll();
-        final currentOverrides = overrideBox.toMap();
-        final baseDay = date.weekday == DateTime.sunday ? 0 : date.weekday;
-        
-        final originalIn = _normalizeHm(worker.checkInTime);
-        final originalOut = _normalizeHm(worker.checkOutTime);
+      final workers = WorkerService.getAll();
+      final currentOverrides = overrideBox.toMap();
+      final baseDay = date.weekday == DateTime.sunday ? 0 : date.weekday;
 
-        for (final w in workers) {
-            if (w.id == worker.id) continue;
-            final wKey = '${w.id}_$ymd';
-            final wOverride = currentOverrides[wKey];
-            if (wOverride != null && _normalizeHm(wOverride.checkIn) == originalIn && _normalizeHm(wOverride.checkOut) == originalOut) {
-                await overrideBox.delete(wKey);
-                await _syncRosterDayToFirestore(w.id, ymd, null, null);
-                break;
-            }
+      final originalIn = _normalizeHm(worker.checkInTime);
+      final originalOut = _normalizeHm(worker.checkOutTime);
+
+      for (final w in workers) {
+        if (w.id == worker.id) continue;
+        final wKey = '${w.id}_$ymd';
+        final wOverride = currentOverrides[wKey];
+        if (wOverride != null &&
+            _normalizeHm(wOverride.checkIn) == originalIn &&
+            _normalizeHm(wOverride.checkOut) == originalOut) {
+          await overrideBox.delete(wKey);
+          await _syncRosterDayToFirestore(w.id, ymd, null, null);
+          break;
         }
+      }
     }
   }
 
@@ -2962,7 +3237,13 @@ class _SchedulePageState extends State<SchedulePage> {
       ),
     );
     final forceOff = isNoShift && hasBaseShift;
-    await _syncRosterDayToFirestore(worker.id, ymd, normalizedIn, normalizedOut, isOff: forceOff);
+    await _syncRosterDayToFirestore(
+      worker.id,
+      ymd,
+      normalizedIn,
+      normalizedOut,
+      isOff: forceOff,
+    );
   }
 
   Future<void> _assignSubstitution({
@@ -2973,12 +3254,16 @@ class _SchedulePageState extends State<SchedulePage> {
   }) async {
     final workers = WorkerService.getAll();
     final overrides = overrideBox.toMap();
-    final sourceShift = _effectiveShiftRange(originalWorker, targetDate, overrides);
+    final sourceShift = _effectiveShiftRange(
+      originalWorker,
+      targetDate,
+      overrides,
+    );
     if (sourceShift == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('해당 날짜에 넘길 근무가 없습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('해당 날짜에 넘길 근무가 없습니다.')));
       return;
     }
 
@@ -2986,9 +3271,9 @@ class _SchedulePageState extends State<SchedulePage> {
 
     if (!mounted) return;
     if (available.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('교대 또는 대타 가능한 직원이 없습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('교대 또는 대타 가능한 직원이 없습니다.')));
       return;
     }
 
@@ -3000,12 +3285,17 @@ class _SchedulePageState extends State<SchedulePage> {
       ),
       builder: (_) => SafeArea(
         child: Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 20),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).padding.bottom + 20,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const ListTile(
-                title: Text('대타 / 교대 지정', style: TextStyle(fontWeight: FontWeight.w700)),
+                title: Text(
+                  '대타 / 교대 지정',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
                 subtitle: Text('근무가 없는 직원은 대타, 근무가 있는 직원은 맞교대 처리됩니다.'),
               ),
               ...available.map(
@@ -3025,7 +3315,11 @@ class _SchedulePageState extends State<SchedulePage> {
     final selectedShift = _effectiveShiftRange(selected, targetDate, overrides);
     final isSwap = selectedShift != null;
 
-    final beforeBMinutes = _workerWeeklyPureMinutes(selected, overrides, _currentWeekStart);
+    final beforeBMinutes = _workerWeeklyPureMinutes(
+      selected,
+      overrides,
+      _currentWeekStart,
+    );
 
     if (isSwap) {
       await _saveOverrideWithCleanup(
@@ -3063,8 +3357,11 @@ class _SchedulePageState extends State<SchedulePage> {
     if (!mounted) return;
 
     final afterOverrides = overrideBox.toMap();
-    final afterBMinutes =
-        _workerWeeklyPureMinutes(selected, afterOverrides, _currentWeekStart);
+    final afterBMinutes = _workerWeeklyPureMinutes(
+      selected,
+      afterOverrides,
+      _currentWeekStart,
+    );
     final crossedRisk = beforeBMinutes < 15 * 60 && afterBMinutes >= 15 * 60;
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -3099,8 +3396,10 @@ class _SchedulePageState extends State<SchedulePage> {
         .firstWhere((id) => id.trim().isNotEmpty, orElse: () => '');
     if (storeId.isEmpty) return;
 
-    final storeSnap =
-        await FirebaseFirestore.instance.collection('stores').doc(storeId).get();
+    final storeSnap = await FirebaseFirestore.instance
+        .collection('stores')
+        .doc(storeId)
+        .get();
     if (!storeSnap.exists) return;
     final storeData = storeSnap.data() ?? {};
 
@@ -3163,9 +3462,11 @@ class _SchedulePageState extends State<SchedulePage> {
     for (final worker in workers) {
       if (worker.workerType == 'dispatch') continue;
       final dayToTime = _parseWorkerSchedule(worker);
-      for (var d = periodStart;
-          !d.isAfter(periodEnd);
-          d = d.add(const Duration(days: 1))) {
+      for (
+        var d = periodStart;
+        !d.isAfter(periodEnd);
+        d = d.add(const Duration(days: 1))
+      ) {
         final ymd = _toYmd(d);
         final key = '${worker.id}_$ymd';
         final o = overrides[key];
@@ -3173,8 +3474,12 @@ class _SchedulePageState extends State<SchedulePage> {
         final hasBaseShift = worker.workDays.contains(baseDay);
         final defaultIn = dayToTime[baseDay]?.start ?? worker.checkInTime;
         final defaultOut = dayToTime[baseDay]?.end ?? worker.checkOutTime;
-        final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? defaultIn : null);
-        final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? defaultOut : null);
+        final checkIn = (o != null)
+            ? o.checkIn
+            : (hasBaseShift ? defaultIn : null);
+        final checkOut = (o != null)
+            ? o.checkOut
+            : (hasBaseShift ? defaultOut : null);
         if (checkIn == null || checkOut == null) continue;
 
         final inDt = _ymdWithHm(d, checkIn);
@@ -3204,7 +3509,10 @@ class _SchedulePageState extends State<SchedulePage> {
     return DateTime(day.year, day.month, day.day, h, m);
   }
 
-  int _weeklyCost(List<Worker> workers, Map<dynamic, ScheduleOverride> overrides) {
+  int _weeklyCost(
+    List<Worker> workers,
+    Map<dynamic, ScheduleOverride> overrides,
+  ) {
     var total = 0.0;
     for (final worker in workers) {
       if (worker.workerType == 'dispatch') continue;
@@ -3217,12 +3525,18 @@ class _SchedulePageState extends State<SchedulePage> {
         final hasBaseShift = worker.workDays.contains(baseDay);
         final defaultIn = dayToTime[baseDay]?.start ?? worker.checkInTime;
         final defaultOut = dayToTime[baseDay]?.end ?? worker.checkOutTime;
-        final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? defaultIn : null);
-        final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? defaultOut : null);
+        final checkIn = (o != null)
+            ? o.checkIn
+            : (hasBaseShift ? defaultIn : null);
+        final checkOut = (o != null)
+            ? o.checkOut
+            : (hasBaseShift ? defaultOut : null);
         if (checkIn == null || checkOut == null) continue;
         final minutes = _minutesBetween(checkIn, checkOut);
         if (minutes <= 0) continue;
-        final paidMinutes = worker.isPaidBreak ? minutes : (minutes - worker.breakMinutes).clamp(0, minutes.toDouble());
+        final paidMinutes = worker.isPaidBreak
+            ? minutes
+            : (minutes - worker.breakMinutes).clamp(0, minutes.toDouble());
         total += (paidMinutes / 60.0) * worker.hourlyWage;
       }
     }
@@ -3246,8 +3560,12 @@ class _SchedulePageState extends State<SchedulePage> {
         final hasBaseShift = worker.workDays.contains(baseDay);
         final defaultIn = dayToTime[baseDay]?.start ?? worker.checkInTime;
         final defaultOut = dayToTime[baseDay]?.end ?? worker.checkOutTime;
-        final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? defaultIn : null);
-        final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? defaultOut : null);
+        final checkIn = (o != null)
+            ? o.checkIn
+            : (hasBaseShift ? defaultIn : null);
+        final checkOut = (o != null)
+            ? o.checkOut
+            : (hasBaseShift ? defaultOut : null);
         if (checkIn == null || checkOut == null) continue;
         final minutes = _minutesBetween(checkIn, checkOut);
         if (minutes <= 0) continue;
@@ -3272,8 +3590,12 @@ class _SchedulePageState extends State<SchedulePage> {
       final hasBaseShift = worker.workDays.contains(baseDay);
       final defaultIn = dayToTime[baseDay]?.start ?? worker.checkInTime;
       final defaultOut = dayToTime[baseDay]?.end ?? worker.checkOutTime;
-      final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? defaultIn : null);
-      final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? defaultOut : null);
+      final checkIn = (o != null)
+          ? o.checkIn
+          : (hasBaseShift ? defaultIn : null);
+      final checkOut = (o != null)
+          ? o.checkOut
+          : (hasBaseShift ? defaultOut : null);
       if (checkIn == null || checkOut == null) continue;
       final minutes = _minutesBetween(checkIn, checkOut);
       if (minutes <= 0) continue;
@@ -3320,8 +3642,10 @@ class _SchedulePageState extends State<SchedulePage> {
     return start < dayEnd && end > nightStart;
   }
 
-  String _money(int value) =>
-      value.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
+  String _money(int value) => value.toString().replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (m) => ',',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -3332,7 +3656,9 @@ class _SchedulePageState extends State<SchedulePage> {
         return ValueListenableBuilder<Box<ScheduleOverride>>(
           valueListenable: overrideBox.listenable(),
           builder: (context, overridesBox, nestedChild) {
-            final workers = WorkerService.getAll().where((w) => w.workerType != 'dispatch').toList();
+            final workers = WorkerService.getAll()
+                .where((w) => w.workerType != 'dispatch')
+                .toList();
             final overrides = overrideBox.toMap();
             final storeId = workers
                 .map((w) => w.storeId)
@@ -3342,7 +3668,9 @@ class _SchedulePageState extends State<SchedulePage> {
             final avgDelta = avg4w.currentAvgHours - avg4w.baseAvgHours;
             final workerWeeklyPureHours = <String, double>{
               for (final w in workers)
-                w.id: _workerWeeklyPureMinutes(w, overrides, _currentWeekStart) / 60.0,
+                w.id:
+                    _workerWeeklyPureMinutes(w, overrides, _currentWeekStart) /
+                    60.0,
             };
             final workerNightRiskByDay = <String, Set<int>>{};
             for (final w in workers) {
@@ -3356,8 +3684,12 @@ class _SchedulePageState extends State<SchedulePage> {
                 final hasBaseShift = w.workDays.contains(baseDay);
                 final defaultIn = dayToTime[baseDay]?.start ?? w.checkInTime;
                 final defaultOut = dayToTime[baseDay]?.end ?? w.checkOutTime;
-                final checkIn = (o != null) ? o.checkIn : (hasBaseShift ? defaultIn : null);
-                final checkOut = (o != null) ? o.checkOut : (hasBaseShift ? defaultOut : null);
+                final checkIn = (o != null)
+                    ? o.checkIn
+                    : (hasBaseShift ? defaultIn : null);
+                final checkOut = (o != null)
+                    ? o.checkOut
+                    : (hasBaseShift ? defaultOut : null);
                 final hasShift = checkIn != null && checkOut != null;
                 if (hasShift && _hasNightWorkAfter22(checkIn, checkOut)) {
                   nightRiskDays.add(i);
@@ -3370,358 +3702,562 @@ class _SchedulePageState extends State<SchedulePage> {
               stream: storeId.isEmpty
                   ? null
                   : FirebaseFirestore.instance
-                      .collection('stores')
-                      .doc(storeId)
-                      .snapshots(),
+                        .collection('stores')
+                        .doc(storeId)
+                        .snapshots(),
               builder: (context, storeSnap) {
                 final storeData = storeSnap.data?.data() ?? const {};
                 final isFiveOrMoreStore =
                     (storeData['isFiveOrMore'] as bool?) ?? false;
                 return Scaffold(
-          backgroundColor: const Color(0xFFF2F2F7),
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF1a1a2e),
-            title: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '근무시간표',
-                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.6)),
-                ),
-                Text(
-                  _isSameDay(_currentWeekStart, _getMonday(AppClock.now()))
-                      ? '이번 주'
-                      : '${_currentWeekStart.month}/${_currentWeekStart.day} ~ ${_currentWeekStart.add(const Duration(days: 6)).month}/${_currentWeekStart.add(const Duration(days: 6)).day}',
-                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-            actions: [
-              IconButton(icon: const Icon(Icons.chevron_left, color: Colors.white), onPressed: _previousWeek),
-              IconButton(icon: const Icon(Icons.chevron_right, color: Colors.white), onPressed: _nextWeek),
-            ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(22),
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _pageDot(active: widget.pageIndex == 0),
-                    const SizedBox(width: 4),
-                    _pageDot(active: widget.pageIndex == 1),
-                    const SizedBox(width: 4),
-                    _pageDot(active: widget.pageIndex == 2),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          body: Column(
-            children: [
-              Container(
-                width: double.infinity,
-                color: const Color(0xFF1a1a2e),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Text(
-                  '이번 주 예상 인건비 ${_money(weeklyCost)}원',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-                ),
-              ),
-              Container(
-                width: double.infinity,
-                color: const Color(0xFFEAF2FF),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Text(
-                  '4주 평균 순수근로시간: ${PayrollCalculator.formatHoursAsKorean(avg4w.currentAvgHours)} '
-                  '(기준 대비 ${avgDelta >= 0 ? '+' : ''}${PayrollCalculator.formatHoursAsKorean(avgDelta)})',
-                  style: const TextStyle(
-                    color: Color(0xFF1A4C9A),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Container(
-                color: const Color(0xFF1a1a2e),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 70,
-                      padding: const EdgeInsets.all(10),
-                      child: const Text('직원', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                    ),
-                    ...List.generate(7, (i) {
-                      final day = _currentWeekStart.add(Duration(days: i));
-                      final isToday = _isSameDay(day, AppClock.now());
-                      return Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          decoration: BoxDecoration(
-                            color: isToday ? const Color(0xFF1a6ebd) : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Column(
-                            children: [
-                              Text(const ['월', '화', '수', '목', '금', '토', '일'][i],
-                                  style: const TextStyle(color: Colors.white, fontSize: 12)),
-                              Text('${day.day}',
-                                  style: TextStyle(
-                                    color: isToday ? Colors.white : Colors.white70,
-                                    fontSize: 11,
-                                  )),
-                            ],
+                  backgroundColor: const Color(0xFFF2F2F7),
+                  appBar: AppBar(
+                    backgroundColor: const Color(0xFF1a1a2e),
+                    title: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '근무시간표',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white.withValues(alpha: 0.6),
                           ),
                         ),
-                      );
-                    }),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: workers.length,
-                  itemBuilder: (context, idx) {
-                    final worker = workers[idx];
-                    final pureHours = workerWeeklyPureHours[worker.id] ?? 0.0;
-                    final isRisk = pureHours >= 15.0;
-                    final parsedSchedule = _parseWorkerSchedule(worker);
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 2),
-                      color: Colors.white,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 70,
-                            padding: const EdgeInsets.all(10),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(worker.name,
-                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                    ),
-                                    Icon(
-                                      isRisk
-                                          ? Icons.warning_amber_rounded
-                                          : Icons.check_circle,
-                                      size: 14,
-                                      color: isRisk
-                                          ? Colors.redAccent
-                                          : Colors.green,
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  '순수 ${PayrollCalculator.formatHoursAsKorean(pureHours)}',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: isRisk
-                                        ? Colors.redAccent
-                                        : Colors.green.shade700,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        Text(
+                          _isSameDay(
+                                _currentWeekStart,
+                                _getMonday(AppClock.now()),
+                              )
+                              ? '이번 주'
+                              : '${_currentWeekStart.month}/${_currentWeekStart.day} ~ ${_currentWeekStart.add(const Duration(days: 6)).month}/${_currentWeekStart.add(const Duration(days: 6)).day}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
                           ),
-                          ...List.generate(7, (i) {
-                            final date = _currentWeekStart.add(Duration(days: i));
-                            final key = '${worker.id}_${_toYmd(date)}';
-                            final override = overrides[key];
-                            final baseDay = (i == 6) ? 0 : i + 1;
-                            final hasBaseShift = worker.workDays.contains(baseDay);
-                            
-                            final defaultIn = parsedSchedule[baseDay]?.start ?? worker.checkInTime;
-                            final defaultOut = parsedSchedule[baseDay]?.end ?? worker.checkOutTime;
-
-                            final isOverrideChanged = override != null &&
-                                ((override.checkIn == null && override.checkOut == null && hasBaseShift) ||
-                                    (override.checkIn != null &&
-                                        override.checkOut != null &&
-                                        (!hasBaseShift ||
-                                            override.checkIn!.substring(0, 5) !=
-                                                defaultIn.substring(0, 5) ||
-                                            override.checkOut!.substring(0, 5) !=
-                                                defaultOut.substring(0, 5))));
-                            final isOverriddenShift = isOverrideChanged;
-                            final hasShift = override != null
-                                ? (override.checkIn != null && override.checkOut != null)
-                                : hasBaseShift;
-                            final displayIn = override?.checkIn ?? defaultIn;
-                            final displayOut = override?.checkOut ?? defaultOut;
-                            final isContractShift = hasShift &&
-                                ((override == null && hasBaseShift) ||
-                                    (override != null &&
-                                        hasBaseShift &&
-                                        override.checkIn != null &&
-                                        override.checkOut != null &&
-                                        override.checkIn!.substring(0, 5) ==
-                                            defaultIn.substring(0, 5) &&
-                                        override.checkOut!.substring(0, 5) ==
-                                            defaultOut.substring(0, 5)));
-                            final isExtraOrSubstituteShift =
-                                hasShift && !isContractShift;
-                            final hasNightRisk = isFiveOrMoreStore &&
-                                (workerNightRiskByDay[worker.id]?.contains(i) ??
-                                    false);
-                            final weekend = i >= 5;
-                            final isToday = _isSameDay(date, AppClock.now());
-                            final isAnnualLeaveCell = override?.isAnnualLeave ?? false;
-                            return Expanded(
-                              child: GestureDetector(
-                                onTap: () => _onCellTap(worker, i),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.chevron_left,
+                          color: Colors.white,
+                        ),
+                        onPressed: _previousWeek,
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.chevron_right,
+                          color: Colors.white,
+                        ),
+                        onPressed: _nextWeek,
+                      ),
+                    ],
+                    bottom: PreferredSize(
+                      preferredSize: const Size.fromHeight(22),
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _pageDot(active: widget.pageIndex == 0),
+                            const SizedBox(width: 4),
+                            _pageDot(active: widget.pageIndex == 1),
+                            const SizedBox(width: 4),
+                            _pageDot(active: widget.pageIndex == 2),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  body: Column(
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        color: const Color(0xFF1a1a2e),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        child: Text(
+                          '이번 주 예상 인건비 ${_money(weeklyCost)}원',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: double.infinity,
+                        color: const Color(0xFFEAF2FF),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        child: Text(
+                          '4주 평균 순수근로시간: ${PayrollCalculator.formatHoursAsKorean(avg4w.currentAvgHours)} '
+                          '(기준 대비 ${avgDelta >= 0 ? '+' : ''}${PayrollCalculator.formatHoursAsKorean(avgDelta)})',
+                          style: const TextStyle(
+                            color: Color(0xFF1A4C9A),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        color: const Color(0xFF1a1a2e),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 70,
+                              padding: const EdgeInsets.all(10),
+                              child: const Text(
+                                '직원',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            ...List.generate(7, (i) {
+                              final day = _currentWeekStart.add(
+                                Duration(days: i),
+                              );
+                              final isToday = _isSameDay(day, AppClock.now());
+                              return Expanded(
                                 child: Container(
-                                  height: 52,
-                                  margin: const EdgeInsets.all(2),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: isAnnualLeaveCell
-                                        ? const Color(0xFFE3F2FD)
-                                        : hasShift
-                                        ? (isOverriddenShift
-                                            ? const Color(0xFF5E35B1)
-                                            : (hasNightRisk
-                                                ? const Color(0xFFB71C1C)
-                                                : isExtraOrSubstituteShift
-                                                    ? const Color(0xFFFFF3E0)
-                                                    : const Color(0xFFE8F5E9)))
-                                        : (weekend ? const Color(0xFFFAFAFA) : const Color(0xFFF8F8F8)),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: isToday
-                                          ? const Color(0xFF1a6ebd)
-                                          : isAnnualLeaveCell
-                                              ? const Color(0xFF1565C0)
-                                          : hasShift
-                                              ? (isOverriddenShift
-                                                  ? const Color(0xFF4527A0)
-                                                  : (hasNightRisk
-                                                      ? const Color(0xFF7F0000)
-                                                      : isExtraOrSubstituteShift
-                                                          ? const Color(0xFFEF6C00)
-                                                          : const Color(0xFF2E7D32)))
-                                              : const Color(0xFFEEEEEE),
-                                      width: isToday ? 1.2 : 0.5,
+                                    color: isToday
+                                        ? const Color(0xFF1a6ebd)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        const [
+                                          '월',
+                                          '화',
+                                          '수',
+                                          '목',
+                                          '금',
+                                          '토',
+                                          '일',
+                                        ][i],
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${day.day}',
+                                        style: TextStyle(
+                                          color: isToday
+                                              ? Colors.white
+                                              : Colors.white70,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: workers.length,
+                          itemBuilder: (context, idx) {
+                            final worker = workers[idx];
+                            final pureHours =
+                                workerWeeklyPureHours[worker.id] ?? 0.0;
+                            final isRisk = pureHours >= 15.0;
+                            final parsedSchedule = _parseWorkerSchedule(worker);
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 2),
+                              color: Colors.white,
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 70,
+                                    padding: const EdgeInsets.all(10),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                worker.name,
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                            Icon(
+                                              isRisk
+                                                  ? Icons.warning_amber_rounded
+                                                  : Icons.check_circle,
+                                              size: 14,
+                                              color: isRisk
+                                                  ? Colors.redAccent
+                                                  : Colors.green,
+                                            ),
+                                          ],
+                                        ),
+                                        Text(
+                                          '순수 ${PayrollCalculator.formatHoursAsKorean(pureHours)}',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: isRisk
+                                                ? Colors.redAccent
+                                                : Colors.green.shade700,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  child: isAnnualLeaveCell
-                                      ? Center(
-                                          child: Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              const Icon(Icons.beach_access_rounded, size: 16, color: Color(0xFF1565C0)),
-                                              const Text('연차', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF1565C0))),
-                                            ],
+                                  ...List.generate(7, (i) {
+                                    final date = _currentWeekStart.add(
+                                      Duration(days: i),
+                                    );
+                                    final key = '${worker.id}_${_toYmd(date)}';
+                                    final override = overrides[key];
+                                    final baseDay = (i == 6) ? 0 : i + 1;
+                                    final hasBaseShift = worker.workDays
+                                        .contains(baseDay);
+
+                                    final defaultIn =
+                                        parsedSchedule[baseDay]?.start ??
+                                        worker.checkInTime;
+                                    final defaultOut =
+                                        parsedSchedule[baseDay]?.end ??
+                                        worker.checkOutTime;
+
+                                    final isOverrideChanged =
+                                        override != null &&
+                                        ((override.checkIn == null &&
+                                                override.checkOut == null &&
+                                                hasBaseShift) ||
+                                            (override.checkIn != null &&
+                                                override.checkOut != null &&
+                                                (!hasBaseShift ||
+                                                    override.checkIn!.substring(
+                                                          0,
+                                                          5,
+                                                        ) !=
+                                                        defaultIn.substring(
+                                                          0,
+                                                          5,
+                                                        ) ||
+                                                    override.checkOut!
+                                                            .substring(0, 5) !=
+                                                        defaultOut.substring(
+                                                          0,
+                                                          5,
+                                                        ))));
+                                    final isOverriddenShift = isOverrideChanged;
+                                    final hasShift = override != null
+                                        ? (override.checkIn != null &&
+                                              override.checkOut != null)
+                                        : hasBaseShift;
+                                    final displayIn =
+                                        override?.checkIn ?? defaultIn;
+                                    final displayOut =
+                                        override?.checkOut ?? defaultOut;
+                                    final isContractShift =
+                                        hasShift &&
+                                        ((override == null && hasBaseShift) ||
+                                            (override != null &&
+                                                hasBaseShift &&
+                                                override.checkIn != null &&
+                                                override.checkOut != null &&
+                                                override.checkIn!.substring(
+                                                      0,
+                                                      5,
+                                                    ) ==
+                                                    defaultIn.substring(0, 5) &&
+                                                override.checkOut!.substring(
+                                                      0,
+                                                      5,
+                                                    ) ==
+                                                    defaultOut.substring(
+                                                      0,
+                                                      5,
+                                                    )));
+                                    final isExtraOrSubstituteShift =
+                                        hasShift && !isContractShift;
+                                    final hasNightRisk =
+                                        isFiveOrMoreStore &&
+                                        (workerNightRiskByDay[worker.id]
+                                                ?.contains(i) ??
+                                            false);
+                                    final weekend = i >= 5;
+                                    final isToday = _isSameDay(
+                                      date,
+                                      AppClock.now(),
+                                    );
+                                    final isAnnualLeaveCell =
+                                        override?.isAnnualLeave ?? false;
+                                    return Expanded(
+                                      child: GestureDetector(
+                                        onTap: () => _onCellTap(worker, i),
+                                        child: Container(
+                                          height: 52,
+                                          margin: const EdgeInsets.all(2),
+                                          decoration: BoxDecoration(
+                                            color: isAnnualLeaveCell
+                                                ? const Color(0xFFE3F2FD)
+                                                : hasShift
+                                                ? (isOverriddenShift
+                                                      ? const Color(0xFF5E35B1)
+                                                      : (hasNightRisk
+                                                            ? const Color(
+                                                                0xFFB71C1C,
+                                                              )
+                                                            : isExtraOrSubstituteShift
+                                                            ? const Color(
+                                                                0xFFFFF3E0,
+                                                              )
+                                                            : const Color(
+                                                                0xFFE8F5E9,
+                                                              )))
+                                                : (weekend
+                                                      ? const Color(0xFFFAFAFA)
+                                                      : const Color(
+                                                          0xFFF8F8F8,
+                                                        )),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            border: Border.all(
+                                              color: isToday
+                                                  ? const Color(0xFF1a6ebd)
+                                                  : isAnnualLeaveCell
+                                                  ? const Color(0xFF1565C0)
+                                                  : hasShift
+                                                  ? (isOverriddenShift
+                                                        ? const Color(
+                                                            0xFF4527A0,
+                                                          )
+                                                        : (hasNightRisk
+                                                              ? const Color(
+                                                                  0xFF7F0000,
+                                                                )
+                                                              : isExtraOrSubstituteShift
+                                                              ? const Color(
+                                                                  0xFFEF6C00,
+                                                                )
+                                                              : const Color(
+                                                                  0xFF2E7D32,
+                                                                )))
+                                                  : const Color(0xFFEEEEEE),
+                                              width: isToday ? 1.2 : 0.5,
+                                            ),
                                           ),
-                                        )
-                                      : hasShift
-                                      ? Stack(
-                                          children: [
-                                            Container(
-                                              alignment: Alignment.center,
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  FittedBox(
-                                                    fit: BoxFit.scaleDown,
-                                                    child: Text(displayIn.substring(0, 5),
-                                                        maxLines: 1,
-                                                        softWrap: false,
+                                          child: isAnnualLeaveCell
+                                              ? Center(
+                                                  child: Column(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      const Icon(
+                                                        Icons
+                                                            .beach_access_rounded,
+                                                        size: 16,
+                                                        color: Color(
+                                                          0xFF1565C0,
+                                                        ),
+                                                      ),
+                                                      const Text(
+                                                        '연차',
                                                         style: TextStyle(
+                                                          fontSize: 9,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color: Color(
+                                                            0xFF1565C0,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                )
+                                              : hasShift
+                                              ? Stack(
+                                                  children: [
+                                                    Container(
+                                                      alignment:
+                                                          Alignment.center,
+                                                      child: Column(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .center,
+                                                        children: [
+                                                          FittedBox(
+                                                            fit: BoxFit
+                                                                .scaleDown,
+                                                            child: Text(
+                                                              displayIn
+                                                                  .substring(
+                                                                    0,
+                                                                    5,
+                                                                  ),
+                                                              maxLines: 1,
+                                                              softWrap: false,
+                                                              style: TextStyle(
+                                                                fontSize: 10,
+                                                                color:
+                                                                    isOverriddenShift
+                                                                    ? Colors
+                                                                          .white
+                                                                    : hasNightRisk
+                                                                    ? Colors
+                                                                          .white
+                                                                    : isExtraOrSubstituteShift
+                                                                    ? const Color(
+                                                                        0xFFEF6C00,
+                                                                      )
+                                                                    : const Color(
+                                                                        0xFF2E7D32,
+                                                                      ),
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          FittedBox(
+                                                            fit: BoxFit
+                                                                .scaleDown,
+                                                            child: Text(
+                                                              displayOut
+                                                                  .substring(
+                                                                    0,
+                                                                    5,
+                                                                  ),
+                                                              maxLines: 1,
+                                                              softWrap: false,
+                                                              style: TextStyle(
+                                                                fontSize: 10,
+                                                                color:
+                                                                    isOverriddenShift
+                                                                    ? Colors
+                                                                          .white
+                                                                    : hasNightRisk
+                                                                    ? Colors
+                                                                          .white
+                                                                    : isExtraOrSubstituteShift
+                                                                    ? const Color(
+                                                                        0xFFEF6C00,
+                                                                      )
+                                                                    : const Color(
+                                                                        0xFF2E7D32,
+                                                                      ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    if (hasNightRisk)
+                                                      const Positioned(
+                                                        left: 3,
+                                                        top: 2,
+                                                        child: Icon(
+                                                          Icons
+                                                              .nights_stay_rounded,
+                                                          size: 10,
+                                                          color: Colors.white,
+                                                        ),
+                                                      ),
+                                                    if (override != null)
+                                                      Positioned(
+                                                        right: 3,
+                                                        top: 2,
+                                                        child: Text(
+                                                          '●',
+                                                          style: TextStyle(
                                                             fontSize: 10,
-                                                            color: isOverriddenShift
+                                                            color:
+                                                                isOverriddenShift
                                                                 ? Colors.white
                                                                 : hasNightRisk
                                                                 ? Colors.white
-                                                                    : isExtraOrSubstituteShift
-                                                                        ? const Color(0xFFEF6C00)
-                                                                        : const Color(0xFF2E7D32),
-                                                            fontWeight: FontWeight.w500)),
-                                                  ),
-                                                  FittedBox(
-                                                    fit: BoxFit.scaleDown,
-                                                    child: Text(displayOut.substring(0, 5),
-                                                        maxLines: 1,
-                                                        softWrap: false,
-                                                        style: TextStyle(
-                                                          fontSize: 10,
-                                                          color: isOverriddenShift
-                                                              ? Colors.white
-                                                              : hasNightRisk
-                                                              ? Colors.white
-                                                                  : isExtraOrSubstituteShift
-                                                                      ? const Color(0xFFEF6C00)
-                                                                      : const Color(0xFF2E7D32),
-                                                        )),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            if (hasNightRisk)
-                                              const Positioned(
-                                                left: 3,
-                                                top: 2,
-                                                child: Icon(
-                                                  Icons.nights_stay_rounded,
-                                                  size: 10,
-                                                  color: Colors.white,
+                                                                : isExtraOrSubstituteShift
+                                                                ? const Color(
+                                                                    0xFFEF6C00,
+                                                                  )
+                                                                : const Color(
+                                                                    0xFF2E7D32,
+                                                                  ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    if (isOverriddenShift &&
+                                                        hasShift)
+                                                      Positioned(
+                                                        right: 3,
+                                                        bottom: 2,
+                                                        child: Container(
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 3,
+                                                                vertical: 1,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.white
+                                                                .withValues(
+                                                                  alpha: 0.18,
+                                                                ),
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  3,
+                                                                ),
+                                                          ),
+                                                          child: const Text(
+                                                            '대체',
+                                                            style: TextStyle(
+                                                              fontSize: 8,
+                                                              color:
+                                                                  Colors.white,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                )
+                                              : const Icon(
+                                                  Icons.add,
+                                                  size: 14,
+                                                  color: Color(0xFFDDDDDD),
                                                 ),
-                                              ),
-                                            if (override != null)
-                                              Positioned(
-                                                right: 3,
-                                                top: 2,
-                                                child: Text('●',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      color: isOverriddenShift
-                                                          ? Colors.white
-                                                          : hasNightRisk
-                                                          ? Colors.white
-                                                              : isExtraOrSubstituteShift
-                                                                  ? const Color(0xFFEF6C00)
-                                                                  : const Color(0xFF2E7D32),
-                                                    )),
-                                              ),
-                                            if (isOverriddenShift && hasShift)
-                                              Positioned(
-                                                right: 3,
-                                                bottom: 2,
-                                                child: Container(
-                                                  padding: const EdgeInsets.symmetric(
-                                                      horizontal: 3, vertical: 1),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white.withValues(alpha: 0.18),
-                                                    borderRadius: BorderRadius.circular(3),
-                                                  ),
-                                                  child: const Text(
-                                                    '대체',
-                                                    style: TextStyle(
-                                                      fontSize: 8,
-                                                      color: Colors.white,
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                          ],
-                                        )
-                                      : const Icon(Icons.add, size: 14, color: Color(0xFFDDDDDD)),
-                                ),
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                ],
                               ),
                             );
-                          }),
-                        ],
+                          },
+                        ),
                       ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-          );
+                    ],
+                  ),
+                );
               },
             );
           },
@@ -3765,23 +4301,37 @@ class _ScheduleEditSheetState extends State<_ScheduleEditSheet> {
 
   TimeOfDay _parseTime(String hhmm) {
     final p = hhmm.split(':');
-    return TimeOfDay(hour: int.tryParse(p.first) ?? 9, minute: int.tryParse(p.last) ?? 0);
+    return TimeOfDay(
+      hour: int.tryParse(p.first) ?? 9,
+      minute: int.tryParse(p.last) ?? 0,
+    );
   }
 
-  String _fmt(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  String _fmt(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  Widget _buildTimePicker(String label, TimeOfDay time, ValueChanged<TimeOfDay> onChanged) {
+  Widget _buildTimePicker(
+    String label,
+    TimeOfDay time,
+    ValueChanged<TimeOfDay> onChanged,
+  ) {
     return Row(
       children: [
         const SizedBox(width: 16),
         SizedBox(
           width: 40,
-          child: Text(label, style: const TextStyle(fontSize: 14, color: Color(0xFF888888))),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 14, color: Color(0xFF888888)),
+          ),
         ),
         Expanded(
           child: GestureDetector(
             onTap: () async {
-              final picked = await showTimePicker(context: context, initialTime: time);
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: time,
+              );
               if (picked != null) onChanged(picked);
             },
             child: Container(
@@ -3792,11 +4342,19 @@ class _ScheduleEditSheetState extends State<_ScheduleEditSheet> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.access_time, color: Color(0xFF1a6ebd), size: 18),
+                  const Icon(
+                    Icons.access_time,
+                    color: Color(0xFF1a6ebd),
+                    size: 18,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     _fmt(time),
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Color(0xFF1a1a2e)),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1a1a2e),
+                    ),
                   ),
                 ],
               ),
@@ -3811,7 +4369,9 @@ class _ScheduleEditSheetState extends State<_ScheduleEditSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 20),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).padding.bottom + 20,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -3831,7 +4391,11 @@ class _ScheduleEditSheetState extends State<_ScheduleEditSheet> {
           const SizedBox(height: 20),
           _buildTimePicker('출근', _checkIn, (t) => setState(() => _checkIn = t)),
           const SizedBox(height: 16),
-          _buildTimePicker('퇴근', _checkOut, (t) => setState(() => _checkOut = t)),
+          _buildTimePicker(
+            '퇴근',
+            _checkOut,
+            (t) => setState(() => _checkOut = t),
+          ),
           const SizedBox(height: 24),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -3845,10 +4409,15 @@ class _ScheduleEditSheetState extends State<_ScheduleEditSheet> {
                     },
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Color(0xFFE24B4A)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('근무 없음', style: TextStyle(color: Color(0xFFE24B4A), fontSize: 14)),
+                    child: const Text(
+                      '근무 없음',
+                      style: TextStyle(color: Color(0xFFE24B4A), fontSize: 14),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -3861,13 +4430,19 @@ class _ScheduleEditSheetState extends State<_ScheduleEditSheet> {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF1a1a2e),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       elevation: 0,
                     ),
                     child: const Text(
                       '저장',
-                      style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ),

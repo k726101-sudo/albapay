@@ -393,4 +393,23 @@ class ExitSettlementResult {
 
   double get totalSettlementAmount =>
       exitMonthWage + annualLeavePayout + severancePay;
+
+  Map<String, dynamic> toMap() {
+    return {
+      'workerName': workerName,
+      'joinDate': joinDate.toIso8601String(),
+      'exitDate': exitDate.toIso8601String(),
+      'totalWorkingDays': totalWorkingDays,
+      'isSeveranceEligible': isSeveranceEligible,
+      'exitMonthWage': exitMonthWage,
+      'remainingLeaveDays': remainingLeaveDays,
+      'annualLeavePayout': annualLeavePayout,
+      'severancePay': severancePay,
+      'averageDailyWage': averageDailyWage,
+      'paymentDeadline': paymentDeadline.toIso8601String(),
+      'requiresManualInput': requiresManualInput,
+      'calculationBasis': calculationBasis,
+      'totalSettlementAmount': totalSettlementAmount,
+    };
+  }
 }

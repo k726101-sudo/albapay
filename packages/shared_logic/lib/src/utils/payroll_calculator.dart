@@ -164,7 +164,12 @@ class PayrollCalculator {
         overtimeApproved: att.overtimeApproved || att.isEditedByBoss,
         graceMinutes: workerData.graceMinutes,
       );
-      final stayMinutes = effectiveOut.difference(effectiveIn).inMinutes;
+      int stayMinutes = effectiveOut.difference(effectiveIn).inMinutes;
+
+      // 결근의 경우 체류 시간(근무 시간)을 0으로 강제
+      if (att.attendanceStatus.toLowerCase() == 'absent') {
+        stayMinutes = 0;
+      }
 
       // ★ 연차유급휴가 처리 (근로기준법 제60조)
       // clockIn == clockOut (stayMinutes == 0) + isAttendanceEquivalent인 경우
@@ -1257,20 +1262,9 @@ class PayrollCalculator {
     required String breakStartTimeStr,
     required String breakEndTimeStr,
   }) {
-    // 고정값 차감: 계약된 휴게시간을 그대로 사용
+    // 고정값 차감: 사장님이 설정한(또는 계약된) 휴게시간을 그대로 사용
+    // (자동 법정 휴게시간 적용은 '무조건 공제'로 인한 실무적 위험성 때문에 폐기됨)
     int breakMins = fallbackMinutes;
-
-    // 법정 최소 휴게시간 보장 (대타근무 등 휴게시간 미설정 시 적용)
-    final actualStay = effectiveOut.difference(effectiveIn).inMinutes;
-    int legalMinimum = 0;
-    if (actualStay >= 480) {
-      legalMinimum = 60; // 8시간 이상 시 60분 강제 보장
-    } else if (actualStay >= 240) {
-      legalMinimum = 30; // 4시간 이상 시 30분 강제 보장
-    }
-    if (breakMins < legalMinimum) {
-      breakMins = legalMinimum;
-    }
 
     return breakMins;
   }
@@ -1432,6 +1426,8 @@ class PayrollCalculator {
 
     final workedDays = <String>{};
     for (final a in attendances) {
+      if (a.attendanceStatus.toLowerCase() == 'absent') continue;
+      
       final day = DateTime(a.clockIn.year, a.clockIn.month, a.clockIn.day);
       if (day.isBefore(rangeStart) || day.isAfter(rangeEnd)) continue;
       // 실제 출퇴근 기록 또는 연차/유급휴일 간주일(isAttendanceEquivalent)

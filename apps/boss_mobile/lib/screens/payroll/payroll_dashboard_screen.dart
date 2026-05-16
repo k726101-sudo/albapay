@@ -534,6 +534,8 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                                         staff,
                                         summary,
                                         manualWeeklyHolidayApproved: approved,
+                                        periodStart: period.start,
+                                        periodEnd: period.end,
                                         onManualWeeklyHolidayApprovalChanged: (v) async {
                                           _manualWeeklyHolidayApproval[staff.id] = v;
                                           
@@ -897,10 +899,16 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
     PayrollCalculationResult? summary,
     {required bool manualWeeklyHolidayApproved,
     required ValueChanged<bool> onManualWeeklyHolidayApprovalChanged,
+    required DateTime periodStart,
+    required DateTime periodEnd,
     double? expectedHolidayRiskAmount,
     double minWage = 0}
   ) {
     if (summary == null) return const SizedBox();
+    
+    String _fH(double h) => PayrollCalculator.formatHoursAsKorean(h);
+    String _fW(num amt) => amt.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (m) => "${m[1]},");
+
     final sumMatches = _salarySumMatches(summary);
     final totalWithoutWeeklyHoliday = summary.totalPay - summary.weeklyHolidayPay;
     return Builder(
@@ -964,8 +972,6 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
               children: [
                 Builder(
                   builder: (context) {
-                    String _fH(double h) => PayrollCalculator.formatHoursAsKorean(h);
-                    String _fW(num amt) => amt.toInt().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (m) => "${m[1]},");
                     final hw = staff.hourlyWage;
 
                     bool hasProbation = staff.isProbation && staff.probationMonths > 0;
@@ -1078,6 +1084,11 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                                 style: const TextStyle(fontSize: 12, color: Colors.blueAccent),
                               );
                             },
+                          )
+                        else if (staff.wageType == 'monthly' && periodStart.month <= 5 && periodEnd.month >= 5)
+                          const Text(
+                            '근로자의 날 유급휴일수당: 월급(기본급)에 기포함',
+                            style: TextStyle(fontSize: 12, color: Colors.blueGrey),
                           ),
                         if (summary.isWeeklyHolidayEligible)
                           Text(
@@ -1099,6 +1110,30 @@ class _PayrollDashboardScreenState extends State<PayrollDashboardScreen> {
                   ),
                 const SizedBox(height: 4),
                 _buildAnnualLeaveChip(summary),
+                if (summary.insuranceDeduction > 0) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    '공제 내역 (예상 4대 보험 및 세금): -${_fW(summary.insuranceDeduction)}원',
+                    style: TextStyle(fontSize: 12, color: Colors.red.shade700, fontWeight: FontWeight.bold),
+                  ),
+                  if (summary.nationalPension > 0)
+                    Text('  • 국민연금: -${_fW(summary.nationalPension)}원', style: TextStyle(fontSize: 11, color: Colors.red.shade400)),
+                  if (summary.healthInsurance > 0)
+                    Text('  • 건강보험: -${_fW(summary.healthInsurance)}원', style: TextStyle(fontSize: 11, color: Colors.red.shade400)),
+                  if (summary.longTermCareInsurance > 0)
+                    Text('  • 장기요양보험: -${_fW(summary.longTermCareInsurance)}원', style: TextStyle(fontSize: 11, color: Colors.red.shade400)),
+                  if (summary.employmentInsurance > 0)
+                    Text('  • 고용보험: -${_fW(summary.employmentInsurance)}원', style: TextStyle(fontSize: 11, color: Colors.red.shade400)),
+                  if (summary.businessIncomeTax > 0)
+                    Text('  • 사업소득세: -${_fW(summary.businessIncomeTax)}원', style: TextStyle(fontSize: 11, color: Colors.red.shade400)),
+                  if (summary.localIncomeTax > 0)
+                    Text('  • 지방소득세: -${_fW(summary.localIncomeTax)}원', style: TextStyle(fontSize: 11, color: Colors.red.shade400)),
+                ],
+                const SizedBox(height: 12),
+                Text(
+                  '예상 실지급액: ${_fW(summary.netPay)}원',
+                  style: const TextStyle(fontSize: 15, color: Colors.blue, fontWeight: FontWeight.w900),
+                ),
                 if (!sumMatches)
                   const Text(
                     '합계 검증 경고: 항목 합과 총액이 일치하지 않습니다.',

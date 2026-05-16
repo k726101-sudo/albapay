@@ -277,6 +277,12 @@ class _ContractPageState extends State<ContractPage> {
         ),
       );
 
+      if (widget.isWizardMode) {
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (mounted) Navigator.pop(context, true);
+        });
+      }
+
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -611,7 +617,7 @@ class _ContractPageState extends State<ContractPage> {
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   icon: const Icon(Icons.person_add_alt_1),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(context, true),
                   label: const Text('다음: 알바생 초대하기'),
                 ),
               ],
