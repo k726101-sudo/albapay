@@ -606,7 +606,7 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                     ),
 
                     // Page 5: 정산 기간 및 급여일
-                    Padding(
+                    SingleChildScrollView(
                       padding: const EdgeInsets.all(24.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -677,6 +677,7 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
                         ],
                       ),
                     ),
+
                   ],
                 ),
               ),
