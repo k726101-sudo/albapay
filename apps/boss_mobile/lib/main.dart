@@ -22,6 +22,7 @@ import 'services/worker_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/store_info_page.dart';
+import 'screens/store/store_setup_screen.dart';
 import 'screens/alba/alba_main_screen.dart';
 import 'theme/app_theme.dart';
 import 'package:workmanager/workmanager.dart';
@@ -425,7 +426,25 @@ class _AuthGateState extends State<_AuthGate> {
                 final hasStore = storeId is String && storeId.trim().isNotEmpty;
 
                 if (!hasStore) {
-                  return const StoreInfoPage(isOnboarding: true);
+                  // store_onboarding_completed 플래그 확인
+                  return FutureBuilder<bool>(
+                    future: isStoreOnboardingCompleted(),
+                    builder: (context, completedSnap) {
+                      if (completedSnap.connectionState != ConnectionState.done) {
+                        return const Scaffold(
+                          body: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      final isCompleted = completedSnap.data ?? false;
+                      if (isCompleted) {
+                        // Firestore storeId 동기화 딜레이 케이스 → 잠시 대기
+                        return const Scaffold(
+                          body: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      return const StoreSetupScreen();
+                    },
+                  );
                 }
 
                 final workerId = data?['workerId'];
