@@ -531,7 +531,8 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
             ),
             const SizedBox(height: 20),
 
-            // ── 서명란 ────────────────────────────────────────────────
+            // ── 서명란 (위자드 모드에서는 숨김 - 웹 번들 서명으로 처리) ──
+            if (!widget.isWizardMode)
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -624,9 +625,7 @@ class _NightConsentScreenState extends State<NightConsentScreen> {
                   height: 56,
                   child: ElevatedButton(
                     onPressed: () async {
-                    if (_sigController.isNotEmpty || _savedSignatureBytes != null) {
-                      await _saveStatus();
-                    }
+                    // 위자드 모드: 서명 없이 바로 다음 단계로
                     if (widget.onNext != null) widget.onNext!();
                   },
                     style: ElevatedButton.styleFrom(

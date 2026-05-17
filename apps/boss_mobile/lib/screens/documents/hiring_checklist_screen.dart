@@ -420,8 +420,8 @@ class _HiringChecklistScreenState extends State<HiringChecklistScreen> {
             _buildConsentList(),
             const SizedBox(height: 24),
 
-            // ── 서명란 ────────────────────────────────────────────────
-            if (_allChecked) ...[
+            // ── 서명란 (위자드 모드에서는 숨김 - 웹 번들 서명으로 처리) ──
+            if (!widget.isWizardMode && _allChecked) ...[
               _sectionTitle('3. 최종 서명'),
               const SizedBox(height: 8),
               Text(
@@ -520,7 +520,7 @@ class _HiringChecklistScreenState extends State<HiringChecklistScreen> {
                   ),
                 ),
               const SizedBox(height: 30),
-            ] else ...[
+            ] else if (!widget.isWizardMode) ...[
               // 아직 미완료 상태일 때 안내
               Container(
                 padding: const EdgeInsets.all(16),
@@ -553,9 +553,8 @@ class _HiringChecklistScreenState extends State<HiringChecklistScreen> {
                   height: 56,
                   child: ElevatedButton(
                     onPressed: () async {
-                    if (_allChecked && (_sigController.isNotEmpty || _savedSignatureBytes != null)) {
-                      await _saveStatus();
-                    }
+                    // 위자드 모드: 서명 없이 체크리스트만 저장 후 다음 단계로
+                    if (_allChecked) await _saveStatus();
                     if (widget.onNext != null) widget.onNext!();
                   },
                     style: ElevatedButton.styleFrom(
