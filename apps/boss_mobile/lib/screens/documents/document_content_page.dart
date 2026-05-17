@@ -127,58 +127,6 @@ class _DocumentContentPageState extends State<DocumentContentPage> {
     }
   }
 
-  Future<void> _handleWorkerSignature(LaborDocument doc) async {
-    final result = await Navigator.push<Map<String, dynamic>>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SignaturePadScreen(title: '${widget.worker.name}님 서명 (대면)'),
-      ),
-    );
-
-    if (result == null) return;
-
-    final signatureBytes = result['signatureBytes'] as Uint8List?;
-    final metadata = result['metadata'] as Map<String, dynamic>;
-
-    if (signatureBytes == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('서명 데이터가 유효하지 않습니다.')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final authUid = FirebaseAuth.instance.currentUser?.uid;
-      if (authUid == null) throw '인증 정보가 없습니다.';
-      // 사장님 앱에서 받는 알바생 서명도 업로드 주체인 사장님 폴더에 격리 보관 (signatures/{userId}/...)
-      final storageRef = FirebaseStorage.instance.ref().child('signatures/$authUid/${doc.id}_worker_f2f.png');
-      
-      final uploadTask = await storageRef.putData(
-        signatureBytes,
-        SettableMetadata(contentType: 'image/png'),
-      );
-      final downloadUrl = await uploadTask.ref.getDownloadURL();
-
-      await _updateDocumentStatus(
-        doc: doc,
-        status: 'signed',
-        signedAt: AppClock.now(),
-        workerSignatureUrl: downloadUrl,
-        workerSignatureMetadata: metadata,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('근로자 서명 업로드 실패: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
   Map<String, dynamic> _buildContractData(Worker worker, StoreInfo? store) {
     // 요일별 근무 시간 맵 생성 (일=0, 월=1, ..., 토=6)
     final workSchedule = <String, Map<String, String>>{};
@@ -247,17 +195,18 @@ class _DocumentContentPageState extends State<DocumentContentPage> {
     return '[유급] $dayStr';
   }
 
-  /// 알바생에게 원격 서명 요청 링크를 share_plus로 전송한다.
-  Future<void> _sendRemoteSignLink(LaborDocument doc) async {
+  /// 알바생에게 번들 서명 요청 링크를 share_plus로 전송한다.
+  /// storeId + workerId 기반 → 해당 직원의 boss_signed 서류 전체를 1회 서명 처리
+  Future<void> _sendBundleSignLink() async {
     const webBase = 'https://standard-albapay.web.app';
-    final link = '$webBase/sign-doc?id=${doc.id}&storeId=${widget.storeId}';
+    final link = '$webBase/sign-bundle?storeId=${widget.storeId}&workerId=${widget.worker.id}';
 
     final storeName = Hive.box<StoreInfo>('store').get('current')?.storeName ?? '사업장';
 
     final message =
-        '[$storeName] 근로계약서 서명 요청\n\n'
-        '${widget.worker.name}님, 아래 링크에서 근로계약서를 확인하고 서명해 주세요.\n\n'
-        '📄 서류명: ${doc.title}\n'
+        '[$storeName] 서류 서명 요청\n\n'
+        '${widget.worker.name}님, 아래 링크에서 서류를 확인하고 서명해 주세요.\n'
+        '근로계약서, 야간근로동의서, 채용체크리스트 등을 한 번에 서명하실 수 있습니다.\n\n'
         '🔗 서명 링크: $link\n\n'
         '※ 서명은 휴대폰 본인 인증 후 진행됩니다.';
 
@@ -444,28 +393,19 @@ class _DocumentContentPageState extends State<DocumentContentPage> {
         
         if (status == 'boss_signed') ...[
           FilledButton.icon(
-            icon: const Icon(Icons.draw_rounded),
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF34C759)),
-            onPressed: _isLoading ? null : () => _handleWorkerSignature(doc),
-            label: const Text('근로자 확인 및 서명 (대면)'),
-          ),
-          const SizedBox(height: 10),
-          // ─── 원격 서명 요청 버튼 ───
-          OutlinedButton.icon(
             icon: const Icon(Icons.send_to_mobile_outlined),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF1a6ebd),
-              side: const BorderSide(color: Color(0xFF1a6ebd)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF1a6ebd),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            onPressed: _isLoading ? null : () => _sendRemoteSignLink(doc),
-            label: const Text('원격 서명 요청 링크 전송', style: TextStyle(fontWeight: FontWeight.w600)),
+            onPressed: _isLoading ? null : _sendBundleSignLink,
+            label: const Text('서명 요청 링크 전송', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 4),
             child: Text(
-              '알바생 폰으로 링크 전송 → 알바생이 직접 서명 후 제출',
+              '알바생 폰으로 링크 발송 → 계약서+야간동의+체크리스트 한 번에 서명',
               style: TextStyle(fontSize: 11, color: Colors.grey),
               textAlign: TextAlign.center,
             ),

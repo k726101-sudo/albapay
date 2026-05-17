@@ -32,6 +32,7 @@ import 'screens/web/web_invite_landing_screen.dart';
 import 'screens/web/web_access_denied_screen.dart';
 import 'screens/web/web_doc_view_screen.dart';
 import 'screens/web/web_sign_doc_screen.dart';
+import 'screens/web/web_sign_bundle_screen.dart';
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {
@@ -244,6 +245,18 @@ class _BossAppState extends State<BossApp> {
           if (id.isNotEmpty && storeId.isNotEmpty) {
             return MaterialPageRoute(
               builder: (_) => WebSignDocScreen(docId: id, storeId: storeId),
+              settings: settings,
+            );
+          }
+        }
+
+        // 웹에서 /sign-bundle?storeId=xxx&workerId=yyy 접근 시 번들 서명 화면으로 라우팅
+        if (uri.path == '/sign-bundle') {
+          final storeId = uri.queryParameters['storeId'] ?? '';
+          final workerId = uri.queryParameters['workerId'] ?? '';
+          if (storeId.isNotEmpty && workerId.isNotEmpty) {
+            return MaterialPageRoute(
+              builder: (_) => WebSignBundleScreen(storeId: storeId, workerId: workerId),
               settings: settings,
             );
           }
