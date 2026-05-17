@@ -31,6 +31,7 @@ import 'firebase_options.dart';
 import 'screens/web/web_invite_landing_screen.dart';
 import 'screens/web/web_access_denied_screen.dart';
 import 'screens/web/web_doc_view_screen.dart';
+import 'screens/web/web_sign_doc_screen.dart';
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {
@@ -231,6 +232,18 @@ class _BossAppState extends State<BossApp> {
           if (id.isNotEmpty && storeId.isNotEmpty) {
             return MaterialPageRoute(
               builder: (_) => WebDocViewScreen(docId: id, storeId: storeId),
+              settings: settings,
+            );
+          }
+        }
+
+        // 웹에서 /sign-doc?id=xxx&storeId=yyy 접근 시 원격 서명 화면으로 라우팅
+        if (uri.path == '/sign-doc') {
+          final id = uri.queryParameters['id'] ?? '';
+          final storeId = uri.queryParameters['storeId'] ?? '';
+          if (id.isNotEmpty && storeId.isNotEmpty) {
+            return MaterialPageRoute(
+              builder: (_) => WebSignDocScreen(docId: id, storeId: storeId),
               settings: settings,
             );
           }

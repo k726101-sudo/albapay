@@ -10,6 +10,7 @@ import '../../utils/pdf/pdf_generator_service.dart';
 import '../../models/worker.dart';
 import '../../models/store_info.dart';
 import 'signature_pad_screen.dart';
+import 'package:share_plus/share_plus.dart';
 
 class DocumentContentPage extends StatefulWidget {
   const DocumentContentPage({
@@ -246,7 +247,27 @@ class _DocumentContentPageState extends State<DocumentContentPage> {
     return '[유급] $dayStr';
   }
 
+  /// 알바생에게 원격 서명 요청 링크를 share_plus로 전송한다.
+  Future<void> _sendRemoteSignLink(LaborDocument doc) async {
+    const webBase = 'https://standard-albapay.web.app';
+    final link = '$webBase/sign-doc?id=${doc.id}&storeId=${widget.storeId}';
+
+    final storeName = Hive.box<StoreInfo>('store').get('current')?.storeName ?? '사업장';
+
+    final message =
+        '[$storeName] 근로계약서 서명 요청\n\n'
+        '${widget.worker.name}님, 아래 링크에서 근로계약서를 확인하고 서명해 주세요.\n\n'
+        '📄 서류명: ${doc.title}\n'
+        '🔗 서명 링크: $link\n\n'
+        '※ 서명은 휴대폰 본인 인증 후 진행됩니다.';
+
+    await SharePlus.instance.share(
+      ShareParams(text: message),
+    );
+  }
+
   Future<void> _handleIssuance(LaborDocument doc) async {
+
     setState(() => _isLoading = true);
     try {
       final store = Hive.box<StoreInfo>('store').get('current');
@@ -421,13 +442,35 @@ class _DocumentContentPageState extends State<DocumentContentPage> {
             label: Text(status == 'draft' ? '작성 완료 및 사장님 서명' : '사장님 서명'),
           ),
         
-        if (status == 'boss_signed')
+        if (status == 'boss_signed') ...[
           FilledButton.icon(
             icon: const Icon(Icons.draw_rounded),
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF34C759)),
             onPressed: _isLoading ? null : () => _handleWorkerSignature(doc),
             label: const Text('근로자 확인 및 서명 (대면)'),
           ),
+          const SizedBox(height: 10),
+          // ─── 원격 서명 요청 버튼 ───
+          OutlinedButton.icon(
+            icon: const Icon(Icons.send_to_mobile_outlined),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF1a6ebd),
+              side: const BorderSide(color: Color(0xFF1a6ebd)),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            onPressed: _isLoading ? null : () => _sendRemoteSignLink(doc),
+            label: const Text('원격 서명 요청 링크 전송', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(height: 6),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              '알바생 폰으로 링크 전송 → 알바생이 직접 서명 후 제출',
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
 
         if (status == 'signed')
           FilledButton.icon(
