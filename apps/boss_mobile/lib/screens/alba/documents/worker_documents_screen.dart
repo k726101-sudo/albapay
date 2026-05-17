@@ -103,16 +103,6 @@ class WorkerDocumentsScreen extends StatelessWidget {
 
           return Column(
             children: [
-              // 디버그 정보 (배포 전 확인용, 투명도 낮게)
-              Opacity(
-                opacity: 0.3,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-                  color: Colors.blue.shade50,
-                  child: Text('DEBUG-INFO: uid=${user.uid.substring(0,6)}... / workerId=${workerId.substring(0,6)}...', style: const TextStyle(fontSize: 10)),
-                ),
-              ),
               Expanded(
                 child: StreamBuilder<List<LaborDocument>>(
                   // 2. 내 서류만 필터링하여 실시간 스트림으로 가져옵니다.
